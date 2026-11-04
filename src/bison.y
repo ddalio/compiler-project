@@ -22,6 +22,12 @@
 %define parse.trace
 %expect 0
 
+/* Sin reducciones por defecto: el parser solo reduce con un token valido de
+ * anticipacion y detecta el error antes de reducir. Asi la lista "expecting"
+ * de los mensajes es exacta (con reducciones por defecto, p. ej. un programa
+ * que empieza con un identificador diria "expecting end of file"). */
+%define lr.default-reduction accepting
+
 %code requires {
 #include "tree.h"
 }
