@@ -1,0 +1,4 @@
+1:2 KW_INT int
+1:6 ID x
+1:7 SEMICOLON ;
+2:3 ID y

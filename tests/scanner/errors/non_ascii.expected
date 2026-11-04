@@ -1,0 +1,4 @@
+non_ascii.ctds:1:5: lexical error: unexpected character '"'
+non_ascii.ctds:1:7: lexical error: unexpected character '"'
+non_ascii.ctds:2:5: lexical error: unexpected character (byte 0xC3)
+non_ascii.ctds:2:6: lexical error: unexpected character (byte 0xB1)

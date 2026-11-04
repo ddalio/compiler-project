@@ -1,0 +1,10 @@
+// line comment int x;
+int x; // trailing
+/* block */ int /* inline */ y;
+/* multi
+   line
+   comment with * and / and // inside */
+x = a / b;
+/**/ z
+/***/ w
+a //c

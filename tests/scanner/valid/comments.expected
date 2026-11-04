@@ -1,0 +1,15 @@
+2:1 KW_INT int
+2:5 ID x
+2:6 SEMICOLON ;
+3:13 KW_INT int
+3:30 ID y
+3:31 SEMICOLON ;
+7:1 ID x
+7:3 ASSIGN =
+7:5 ID a
+7:7 SLASH /
+7:9 ID b
+7:10 SEMICOLON ;
+8:6 ID z
+9:7 ID w
+10:1 ID a

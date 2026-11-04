@@ -1,0 +1,3 @@
+illegal_chars.ctds:1:8: lexical error: unexpected character '$'
+illegal_chars.ctds:2:1: lexical error: unexpected character '#'
+illegal_chars.ctds:2:5: lexical error: unexpected character '~'

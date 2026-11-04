@@ -1,0 +1,2 @@
+int_range.ctds:1:5: lexical error: integer literal '2147483648' out of range (max 2147483647)
+int_range.ctds:1:37: lexical error: integer literal '99999999999999999999' out of range (max 2147483647)

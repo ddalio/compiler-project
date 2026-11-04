@@ -1,0 +1,10 @@
+1:1 KW_BOOLEAN boolean
+1:9 KW_ELSE else
+1:14 KW_FALSE false
+1:20 KW_FLOAT float
+1:26 KW_IF if
+1:29 KW_INT int
+1:33 KW_RETURN return
+1:40 KW_TRUE true
+1:45 KW_VOID void
+1:50 KW_WHILE while
