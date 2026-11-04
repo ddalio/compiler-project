@@ -1,17 +1,26 @@
 /*
- * main.c - Interfaz de linea de comandos de c-tds (Etapa 1: analisis lexico).
+ * main.c - Interfaz de linea de comandos de c-tds
+ *          (Etapas 1 y 2: analisis lexico y sintactico).
  *
  *   c-tds [opcion] nombreArchivo.ctds
  *
  *   -o <salida>      nombre del archivo de salida
- *   -target <etapa>  etapa hasta la que se compila (hoy solo: scan)
- *   -debug           imprime por stdout los tokens reconocidos
+ *   -target <etapa>  etapa hasta la que se compila: scan o parse (por defecto
+ *                    parse, la etapa actual)
+ *   -debug           imprime informacion de depuracion
  *
- * Salida de la etapa "scan": archivo <nombre>.lex con un token por linea:
+ * Salida de cada etapa:
+ *   scan   archivo <nombre>.lex con un token por linea:
+ *            <linea>:<columna> <NOMBRE_TOKEN> <lexema>
+ *          -debug imprime esos mismos tokens por stdout.
+ *   parse  archivo <nombre>.sint con el arbol de parsing, un nodo por linea
+ *          con 2 espacios de sangria por nivel (ver tree.h).
+ *          -debug imprime ese arbol por stdout y la traza del parser por
+ *          stderr.
  *
- *   <linea>:<columna> <NOMBRE_TOKEN> <lexema>
- *
- * Codigos de salida: 0 = ok, 1 = errores lexicos, 2 = error de uso o de E/S.
+ * Si hay errores no se genera el archivo de salida.
+ * Codigos de salida: 0 = ok, 1 = errores lexicos o sintacticos,
+ *                    2 = error de uso o de E/S.
  */
 #define _POSIX_C_SOURCE 200809L
 
@@ -20,11 +29,13 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "parser.h"
 #include "scanner.h"
+#include "tree.h"
 
 #define SOURCE_EXT ".ctds"
 #define EXIT_OK        0
-#define EXIT_LEX_ERROR 1
+#define EXIT_SRC_ERROR 1
 #define EXIT_USAGE     2
 
 typedef struct {
@@ -40,8 +51,9 @@ static void usage(FILE *out)
         "Usage: c-tds [options] file.ctds\n"
         "Options:\n"
         "  -o <output>      write the output to <output>\n"
-        "  -target <stage>  compile up to <stage> (available: scan)\n"
-        "  -debug           print debugging information (tokens) to stdout\n");
+        "  -target <stage>  compile up to <stage> (available: scan, parse;\n"
+        "                   default: parse)\n"
+        "  -debug           print debugging information\n");
 }
 
 static int has_extension(const char *name, const char *ext)
@@ -50,13 +62,12 @@ static int has_extension(const char *name, const char *ext)
     return n > e && strcmp(name + n - e, ext) == 0;
 }
 
-/* Etapas que define la catedra; por ahora solo "scan" esta implementada. */
+/* Etapas que define la catedra; por ahora estan implementadas scan y parse. */
 static int check_target(const char *target)
 {
-    if (strcmp(target, "scan") == 0)
+    if (strcmp(target, "scan") == 0 || strcmp(target, "parse") == 0)
         return 1;
-    if (strcmp(target, "parse") == 0 || strcmp(target, "codinter") == 0 ||
-        strcmp(target, "assembly") == 0)
+    if (strcmp(target, "codinter") == 0 || strcmp(target, "assembly") == 0)
         fprintf(stderr, "c-tds: target '%s' is not available yet\n", target);
     else
         fprintf(stderr, "c-tds: unknown target '%s'\n", target);
@@ -68,7 +79,7 @@ static int parse_args(int argc, char **argv, Options *opt)
 {
     opt->input = NULL;
     opt->output = NULL;
-    opt->target = "scan";           /* por defecto: hasta la etapa actual */
+    opt->target = "parse";          /* por defecto: hasta la etapa actual */
     opt->debug = 0;
 
     for (int i = 1; i < argc; i++) {
@@ -109,31 +120,55 @@ static int parse_args(int argc, char **argv, Options *opt)
     return check_target(opt->target);
 }
 
-/* Nombre por defecto: el del fuente con la extension de la etapa (.lex). */
-static char *default_output(const char *input, const char *new_ext)
+/* Ruta del archivo de salida: la de -o si se dio; si no, el nombre del fuente
+ * con la extension de la etapa (.lex, .sint). Hay que liberarla con free. */
+static char *output_path(const Options *opt, const char *stage_ext)
 {
-    size_t base = strlen(input) - strlen(SOURCE_EXT);
-    char *out = malloc(base + strlen(new_ext) + 1);
+    char *out;
 
+    if (opt->output) {
+        out = malloc(strlen(opt->output) + 1);
+        if (out)
+            strcpy(out, opt->output);
+    } else {
+        size_t base = strlen(opt->input) - strlen(SOURCE_EXT);
+
+        out = malloc(base + strlen(stage_ext) + 1);
+        if (out) {
+            memcpy(out, opt->input, base);
+            strcpy(out + base, stage_ext);
+        }
+    }
     if (!out) {
         perror("c-tds");
         exit(EXIT_USAGE);
     }
-    memcpy(out, input, base);
-    strcpy(out + base, new_ext);
     return out;
 }
 
-/* Corre el scanner. Los tokens se acumulan en memoria (`buf`) y recien se
- * escriben al archivo de salida si no hubo errores lexicos. */
-static int run_scan(const Options *opt)
+static FILE *open_input(const Options *opt)
 {
     FILE *in = fopen(opt->input, "r");
-    if (!in) {
+
+    if (!in)
         fprintf(stderr, "c-tds: cannot open '%s': %s\n",
                 opt->input, strerror(errno));
+    return in;
+}
+
+static int write_failed(const char *path)
+{
+    fprintf(stderr, "c-tds: cannot write '%s': %s\n", path, strerror(errno));
+    return EXIT_USAGE;
+}
+
+/* Etapa scan. Los tokens se acumulan en memoria (`buf`) y recien se escriben
+ * al archivo de salida si no hubo errores lexicos. */
+static int run_scan(const Options *opt)
+{
+    FILE *in = open_input(opt);
+    if (!in)
         return EXIT_USAGE;
-    }
 
     char *buf = NULL;
     size_t buf_len = 0;
@@ -150,27 +185,62 @@ static int run_scan(const Options *opt)
         fprintf(mem, "%d:%d %s %s\n", tok_line, tok_col, token_name(t), yytext);
         if (opt->debug)
             printf("%d:%d %s %s\n", tok_line, tok_col, token_name(t), yytext);
+        node_free(yylval.node);         /* hoja que el parser no va a usar */
     }
     fclose(in);
     fclose(mem);
 
     int status = EXIT_OK;
     if (lex_errors > 0) {
-        status = EXIT_LEX_ERROR;        /* no se genera archivo de salida */
+        status = EXIT_SRC_ERROR;        /* no se genera archivo de salida */
     } else {
-        char *dflt = opt->output ? NULL : default_output(opt->input, ".lex");
-        const char *path = opt->output ? opt->output : dflt;
+        char *path = output_path(opt, ".lex");
         FILE *out = fopen(path, "w");
 
         if (!out || fwrite(buf, 1, buf_len, out) != buf_len ||
-            fclose(out) != 0) {
-            fprintf(stderr, "c-tds: cannot write '%s': %s\n",
-                    path, strerror(errno));
-            status = EXIT_USAGE;
-        }
-        free(dflt);
+            fclose(out) != 0)
+            status = write_failed(path);
+        free(path);
     }
     free(buf);
+    return status;
+}
+
+/* Etapa parse: scanner + parser; escribe el arbol de parsing en el .sint. */
+static int run_parse(const Options *opt)
+{
+    FILE *in = open_input(opt);
+    if (!in)
+        return EXIT_USAGE;
+
+    scanner_init(opt->input, in);
+    parse_root = NULL;
+    yydebug = opt->debug;               /* traza del parser por stderr */
+    int rc = yyparse();
+    fclose(in);
+
+    int status = EXIT_OK;
+    if (rc == 2) {
+        status = EXIT_USAGE;            /* memoria agotada (ya informado) */
+    } else if (rc != 0 || lex_errors > 0) {
+        status = EXIT_SRC_ERROR;        /* no se genera archivo de salida */
+    } else {
+        char *path = output_path(opt, ".sint");
+        FILE *out = fopen(path, "w");
+
+        if (!out) {
+            status = write_failed(path);
+        } else {
+            tree_print(out, parse_root);
+            if (fclose(out) != 0)
+                status = write_failed(path);
+        }
+        free(path);
+    }
+    if (opt->debug && rc == 0)
+        tree_print(stdout, parse_root);
+    node_free(parse_root);
+    parse_root = NULL;
     return status;
 }
 
@@ -182,5 +252,7 @@ int main(int argc, char **argv)
         usage(stderr);
         return EXIT_USAGE;
     }
-    return run_scan(&opt);
+    if (strcmp(opt.target, "scan") == 0)
+        return run_scan(&opt);
+    return run_parse(&opt);
 }
