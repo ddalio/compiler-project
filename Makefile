@@ -2,6 +2,7 @@
 #
 #   make          compila el ejecutable ./c-tds
 #   make test     compila y corre todos los tests
+#   make test-asan  corre los tests con sanitizers (memoria)
 #   make clean    borra el ejecutable y los archivos generados
 
 BUILD   := build
@@ -17,7 +18,7 @@ BISON   ?= bison
 OBJS    := $(BUILD)/main.o $(BUILD)/tokens.o $(BUILD)/tree.o \
            $(BUILD)/lex.yy.o $(BUILD)/bison.tab.o
 
-.PHONY: all test clean
+.PHONY: all test test-asan clean
 
 all: $(TARGET)
 
@@ -53,5 +54,11 @@ $(BUILD):
 test: $(TARGET)
 	bash tests/run_tests.sh ./$(TARGET)
 
+# Corre los mismos tests con un ejecutable compilado con AddressSanitizer y
+# UBSan (detectan perdidas de memoria y accesos invalidos). Usa carpetas y
+# ejecutable propios para no pisar el build normal.
+test-asan:
+	$(MAKE) BUILD=build-asan TARGET=c-tds-asan CC="$(CC) -fsanitize=address,undefined" test
+
 clean:
-	rm -rf $(BUILD) $(TARGET)
+	rm -rf $(BUILD) $(TARGET) build-asan c-tds-asan

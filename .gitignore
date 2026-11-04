@@ -1,6 +1,8 @@
 # Ejecutable y objetos generados
 c-tds
 build/
+c-tds-asan
+build-asan/
 
 # Salidas del compilador (archivos de etapa)
 *.lex
