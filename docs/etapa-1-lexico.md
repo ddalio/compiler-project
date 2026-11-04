@@ -76,7 +76,8 @@ decisiones tomadas:
 - `-2147483648` no se puede escribir: el literal `2147483648` se rechaza y el signo es un token aparte.
 - Un literal real se valida solo contra el rango de `double`; no hay chequeo del rango de `float`.
 - `123abc` se reconoce como `INT_LITERAL 123` seguido de `ID abc`. El scanner no lo marca como error;
-  corresponde a la etapa siguiente rechazar esa secuencia.
+  corresponde a la etapa siguiente rechazar esa secuencia. _(Resuelto en la etapa 2: el parser la rechaza
+  con `unexpected identifier`.)_
 - Los caracteres no ASCII (por ejemplo `ñ`) se reportan byte por byte, una vez por byte.
 - El ejemplo de programa de la especificación tiene una llave `}` de más al final. El test
   `program` usa el ejemplo sin esa llave.

@@ -223,3 +223,29 @@ inválidos.
 engañosos por las reducciones por defecto de bison. Se corrigió con `%define lr.default-reduction accepting`
 (ver sección 4).
 
+## 6. Problemas conocidos
+
+- **Anidamiento muy profundo.** La pila del parser de bison tiene un tope de 10000 niveles. Un programa con
+  unos 10000 paréntesis anidados (`((((...a...))))`) o 10000 operadores unarios seguidos (`-----a`) termina
+  con `error: memory exhausted` y código de salida 2, sin generar `.sint`. Se detectó generando esos
+  programas con un script. No es un problema para programas reales; subir el tope requeriría
+  `#define YYMAXDEPTH` en `bison.y`.
+- **Expresiones larguísimas.** `tree_print` y `node_free` son recursivas y la profundidad del árbol de una
+  cadena `a + a + ... + a` es la cantidad de términos. Con 100000 términos funciona; con 1000000 el
+  programa se cae por desborde de la pila de C (segmentation fault). Solucionarlo implicaría reescribir
+  ambas funciones con una pila propia; se dejó así por ser una entrada irreal para este lenguaje.
+- **Un solo error sintáctico por corrida.** El parser se detiene en el primero (decisión de diseño, ver
+  sección 2). Los errores léxicos sí se informan todos.
+- **Mensajes `expecting`.** Se omiten cuando son más de 4 tokens esperados, así que en muchos errores dentro
+  de expresiones el mensaje solo dice qué token fue inesperado.
+- **Formato del `.sint`.** La cátedra no define el formato del árbol de parsing; es el que se eligió en la
+  decisión 3. Si más adelante se pidiera otro formato, solo habría que cambiar `print_node` en `tree.c`.
+- **El árbol no guarda los paréntesis ni la puntuación.** Es intencional (decisión de diseño), pero
+  significa que no se puede reconstruir el texto original a partir del `.sint`.
+- **Heredados de la etapa 1:** `-2147483648` no se puede escribir como literal; los literales reales solo se
+  validan contra el rango de `double`; los caracteres no ASCII se informan byte por byte; los comentarios
+  de bloque no se anidan; el ejemplo de la spec trae una llave `}` de más.
+
+**Resuelto en esta etapa:** `123abc` se reconocía en la etapa 1 como `INT_LITERAL 123` seguido de `ID abc`
+sin avisar. Ahora el parser lo rechaza (`unexpected identifier`), que era lo previsto.
+
