@@ -43,7 +43,7 @@ for src in "$ROOT"/tests/scanner/valid/*.ctds; do
     name="$(basename "$src" .ctds)"
     expected="${src%.ctds}.expected"
     rm -f "$TMP/out.lex"
-    run "$(dirname "$src")" -o "$TMP/out.lex" "$name.ctds"
+    run "$(dirname "$src")" -target scan -o "$TMP/out.lex" "$name.ctds"
     if [ $status -ne 0 ]; then
         bad "$name" "exit code $status (se esperaba 0): $(cat "$TMP/stderr")"
     elif [ -s "$TMP/stdout" ] || [ -s "$TMP/stderr" ]; then
@@ -52,7 +52,7 @@ for src in "$ROOT"/tests/scanner/valid/*.ctds; do
         bad "$name" "$(cat "$TMP/diff")"
     else
         # Con -debug los mismos tokens salen por stdout.
-        run "$(dirname "$src")" -debug -o "$TMP/out2.lex" "$name.ctds"
+        run "$(dirname "$src")" -target scan -debug -o "$TMP/out2.lex" "$name.ctds"
         if diff -u "$expected" "$TMP/stdout" > "$TMP/diff"; then
             ok "$name"
         else
@@ -66,7 +66,7 @@ for src in "$ROOT"/tests/scanner/errors/*.ctds; do
     name="$(basename "$src" .ctds)"
     expected="${src%.ctds}.expected"
     rm -f "$TMP/out.lex"
-    run "$(dirname "$src")" -o "$TMP/out.lex" "$name.ctds"
+    run "$(dirname "$src")" -target scan -o "$TMP/out.lex" "$name.ctds"
     if [ $status -ne 1 ]; then
         bad "$name" "exit code $status (se esperaba 1)"
     elif [ -e "$TMP/out.lex" ]; then
@@ -101,13 +101,13 @@ cli "opcion desconocida"         2 "unknown option '-foo'"    -- -foo keywords.c
 cli "dos archivos de entrada"    2 "only one input file"      -- keywords.ctds literals.ctds
 cli "-o sin argumento"           2 "requires an argument"     -- keywords.ctds -o
 cli "-target sin argumento"      2 "requires an argument"     -- keywords.ctds -target
-cli "-target no disponible"      2 "not available yet"        -- -target parse keywords.ctds
+cli "-target no disponible"      2 "not available yet"        -- -target codinter keywords.ctds
 cli "-target desconocido"        2 "unknown target 'foo'"     -- -target foo keywords.ctds
 
 # Nombre de salida por defecto: <fuente>.lex junto al fuente.
 mkdir "$TMP/default"
 cp "$ROOT/tests/scanner/valid/program.ctds" "$TMP/default/prog.ctds"
-run "$TMP/default" prog.ctds
+run "$TMP/default" -target scan prog.ctds
 if [ $status -eq 0 ] && [ ! -s "$TMP/stdout" ] &&
    diff -q "$ROOT/tests/scanner/valid/program.expected" "$TMP/default/prog.lex" > /dev/null; then
     ok "salida por defecto: prog.lex"
