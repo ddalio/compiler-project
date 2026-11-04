@@ -117,3 +117,40 @@ variables globales, parámetros, `if/else`, `while`, llamadas, `-` unario, bloqu
 y las posiciones de cada nodo (línea y columna) se compararon a mano con el fuente, y la ejecución con
 AddressSanitizer y UBSan no mostró errores de memoria, incluso liberando el árbol de parsing antes de usar el AST.
 
+### Tabla de símbolos (`symtab.h`, `symtab.c`)
+
+Sigue la teoría de `06-TDS-TS`: una **pila de niveles**, cada nivel con la lista de sus símbolos, y las
+operaciones AbrirNivel, CerrarNivel, InsertarSimbolo y BuscarSimbolo. Un símbolo guarda su clase (variable,
+parámetro o método), nombre, tipo, posición de declaración y nivel; los métodos además guardan los tipos de sus
+parámetros formales, que se necesitan para verificar las llamadas (regla 4).
+
+Decisiones de este diseño:
+
+- **El nivel global existe desde el principio.** `symtab_new` lo deja abierto, y no se puede cerrar. Así no hay un
+  estado "sin niveles" que haya que contemplar al insertar.
+- **Insertar detecta la redeclaración.** `symtab_insert` devuelve `NULL` y no inserta si el nombre ya está en el
+  nivel actual. Detectar el error y evitar el duplicado es una sola operación, y no puede olvidarse la consulta
+  previa. Para informar "previous declaration at ..." se obtiene el símbolo anterior con
+  `symtab_lookup_current`.
+- **Dos búsquedas distintas.** `symtab_lookup_current` (solo el nivel actual) sirve para la regla 1
+  (redeclaración) y `symtab_lookup` (del nivel actual hacia el global) para los usos (regla 2). La segunda
+  implementa el ocultamiento: un nombre interno tapa al externo, incluso a un método.
+- **Los símbolos sobreviven al cierre del nivel** (decisión 3 de la sección 2). La tabla guarda además una lista de
+  todos los símbolos en orden de alta; con ella `symtab_free` libera todo y `symtab_dump` puede volcar el contenido
+  completo aunque los niveles ya estén cerrados.
+- **Traza.** `symtab_set_trace` activa una línea por operación (`[symtab] insert x (variable int) at level 2`), que es
+  lo que se mostrará con `-debug`.
+- **Búsqueda lineal.** Cada nivel es una lista y se busca recorriéndola. Es suficiente para programas de este tamaño;
+  una tabla hash por nivel sería la mejora si hiciera falta.
+- **Cerrar el nivel global es un error de programación** y se comprueba con `assert`: no puede ocurrir con un
+  programa de entrada, solo por un uso incorrecto de la tabla.
+
+La tabla todavía no la usa ningún chequeo: abrir un nivel por método y por bloque, y cargarla con las
+declaraciones del AST, es el trabajo del recorrido semántico.
+
+Verificación: se probó con un programa temporal (que no se versiona), con las situaciones de la teoría: un símbolo
+global visible desde un método, una variable local que oculta a una global, una local que oculta a un método,
+el mismo nombre en niveles distintos (válido), la misma declaración dos veces en un nivel (rechazada), la vuelta
+a ver el símbolo exterior al cerrar un nivel, símbolos que siguen vivos tras cerrar su nivel y la liberación con un
+nivel todavía abierto. Corre sin errores con AddressSanitizer y UBSan.
+
