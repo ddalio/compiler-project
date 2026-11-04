@@ -1,0 +1,7 @@
+# Ejecutable y objetos generados
+c-tds
+build/
+
+# Salidas del compilador (archivos de etapa)
+*.lex
+*.out
