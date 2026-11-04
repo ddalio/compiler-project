@@ -16,7 +16,7 @@ FLEX    ?= flex
 BISON   ?= bison
 
 OBJS    := $(BUILD)/main.o $(BUILD)/tokens.o $(BUILD)/tree.o \
-           $(BUILD)/types.o $(BUILD)/ast.o \
+           $(BUILD)/types.o $(BUILD)/ast.o $(BUILD)/symtab.o \
            $(BUILD)/lex.yy.o $(BUILD)/bison.tab.o
 
 .PHONY: all test test-asan clean
@@ -46,7 +46,7 @@ $(BUILD)/lex.yy.c: src/scanner.l | $(BUILD)
 $(BUILD)/lex.yy.o: $(BUILD)/lex.yy.c src/scanner.h src/tokens.h src/tree.h $(BUILD)/bison.tab.h
 	$(CC) $(CFLAGS) -Wno-unused-function -c $< -o $@
 
-$(BUILD)/%.o: src/%.c src/scanner.h src/parser.h src/tokens.h src/tree.h src/types.h src/ast.h \
+$(BUILD)/%.o: src/%.c src/scanner.h src/parser.h src/tokens.h src/tree.h src/types.h src/ast.h src/symtab.h \
                $(BUILD)/bison.tab.h | $(BUILD)
 	$(CC) $(CFLAGS) -c $< -o $@
 
