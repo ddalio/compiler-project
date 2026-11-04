@@ -1,0 +1,16 @@
+program
+  method_decl
+    KW_VOID void
+    ID f
+    params
+    block
+      empty_stmt
+      block
+        var_decl
+          KW_INT int
+          ID z
+        assign
+          ID z
+          INT_LITERAL 1
+      block
+        block

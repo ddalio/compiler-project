@@ -1,0 +1,38 @@
+program
+  method_decl
+    KW_INT int
+    ID inc
+    params
+      param
+        KW_INT int
+        ID x
+    block
+      return
+        binary_expr
+          ID x
+          PLUS +
+          INT_LITERAL 1
+  method_decl
+    KW_VOID void
+    ID main
+    params
+    block
+      var_decl
+        KW_INT int
+        ID y
+      assign
+        ID y
+        INT_LITERAL 4
+      if_else
+        binary_expr
+          ID y
+          EQ ==
+          INT_LITERAL 1
+        block
+          return
+            INT_LITERAL 1
+        block
+          return
+            call
+              ID inc
+              ID y

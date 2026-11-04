@@ -1,0 +1,1 @@
+trailing_comma_params.ctds:1:14: syntax error, unexpected ')', expecting 'boolean' or 'float' or 'int'

@@ -1,0 +1,18 @@
+program
+  method_decl
+    KW_VOID void
+    ID f
+    params
+    block
+      assign
+        ID x
+        INT_LITERAL 1
+      assign
+        ID y
+        FLOAT_LITERAL 2.5
+      assign
+        ID z
+        KW_TRUE true
+      assign
+        ID w
+        KW_FALSE false

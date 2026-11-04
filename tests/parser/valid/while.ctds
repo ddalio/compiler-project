@@ -1,0 +1,4 @@
+void f() {
+  while (x) { }
+  while x < 3 { x = x + 1; }
+}

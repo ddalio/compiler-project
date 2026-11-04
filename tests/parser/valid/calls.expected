@@ -1,0 +1,21 @@
+program
+  method_decl
+    KW_VOID void
+    ID f
+    params
+    block
+      call
+        ID g
+      call
+        ID h
+        INT_LITERAL 1
+        INT_LITERAL 2
+      assign
+        ID x
+        binary_expr
+          call
+            ID g
+            INT_LITERAL 1
+          PLUS +
+          call
+            ID k

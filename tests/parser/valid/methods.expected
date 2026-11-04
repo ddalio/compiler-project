@@ -1,0 +1,19 @@
+program
+  method_decl
+    KW_VOID void
+    ID f
+    params
+    block
+  method_decl
+    KW_INT int
+    ID g
+    params
+      param
+        KW_INT int
+        ID x
+      param
+        KW_FLOAT float
+        ID y
+    block
+      return
+        ID x

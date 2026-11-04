@@ -9,6 +9,11 @@
 #                                    (codigo de salida 0, nada por stdout/stderr)
 #   tests/scanner/errors/*.ctds   -> <caso>.expected = stderr esperado
 #                                    (codigo de salida 1, sin archivo de salida)
+# Etapa 2 (parser):
+#   tests/parser/valid/*.ctds     -> <caso>.expected = contenido esperado del .sint
+#                                    (arbol de parsing; codigo de salida 0)
+#   tests/parser/errors/*.ctds    -> <caso>.expected = stderr esperado
+#                                    (codigo de salida 1, sin archivo de salida)
 #   Interfaz de linea de comandos: opciones, nombres de salida y errores de uso.
 #
 # Los .expected estan escritos a mano a partir de la especificacion del lenguaje.
@@ -78,6 +83,46 @@ for src in "$ROOT"/tests/scanner/errors/*.ctds; do
     fi
 done
 
+echo "== Parser: casos validos =="
+for src in "$ROOT"/tests/parser/valid/*.ctds; do
+    name="$(basename "$src" .ctds)"
+    expected="${src%.ctds}.expected"
+    rm -f "$TMP/out.sint"
+    run "$(dirname "$src")" -target parse -o "$TMP/out.sint" "$name.ctds"
+    if [ $status -ne 0 ]; then
+        bad "$name" "exit code $status (se esperaba 0): $(cat "$TMP/stderr")"
+    elif [ -s "$TMP/stdout" ] || [ -s "$TMP/stderr" ]; then
+        bad "$name" "sin -debug no debe imprimirse nada"
+    elif ! diff -u "$expected" "$TMP/out.sint" > "$TMP/diff"; then
+        bad "$name" "$(cat "$TMP/diff")"
+    else
+        # Con -debug el mismo arbol sale por stdout (la traza va por stderr).
+        run "$(dirname "$src")" -target parse -debug -o "$TMP/out2.sint" "$name.ctds"
+        if [ $status -eq 0 ] && diff -u "$expected" "$TMP/stdout" > "$TMP/diff"; then
+            ok "$name"
+        else
+            bad "$name (-debug)" "exit $status $(cat "$TMP/diff")"
+        fi
+    fi
+done
+
+echo "== Parser: errores lexicos y sintacticos =="
+for src in "$ROOT"/tests/parser/errors/*.ctds; do
+    name="$(basename "$src" .ctds)"
+    expected="${src%.ctds}.expected"
+    rm -f "$TMP/out.sint"
+    run "$(dirname "$src")" -target parse -o "$TMP/out.sint" "$name.ctds"
+    if [ $status -ne 1 ]; then
+        bad "$name" "exit code $status (se esperaba 1)"
+    elif [ -e "$TMP/out.sint" ]; then
+        bad "$name" "con errores no debe generarse el archivo de salida"
+    elif ! diff -u "$expected" "$TMP/stderr" > "$TMP/diff"; then
+        bad "$name" "$(cat "$TMP/diff")"
+    else
+        ok "$name"
+    fi
+done
+
 echo "== Interfaz de linea de comandos =="
 
 # cli <descripcion> <exit esperado> <texto esperado en stderr> -- <args...>
@@ -121,6 +166,41 @@ if [ $status -eq 0 ] && [ -f "$TMP/default/custom.out" ]; then
     ok "-o <salida> -target scan"
 else
     bad "-o <salida> -target scan" "exit $status"
+fi
+
+# Etapa parse: el target por defecto genera <fuente>.sint junto al fuente.
+cp "$ROOT/tests/parser/valid/spec_example.ctds" "$TMP/default/spec.ctds"
+run "$TMP/default" spec.ctds
+if [ $status -eq 0 ] && [ ! -s "$TMP/stdout" ] &&
+   diff -q "$ROOT/tests/parser/valid/spec_example.expected" "$TMP/default/spec.sint" > /dev/null &&
+   [ ! -e "$TMP/default/spec.lex" ]; then
+    ok "target por defecto: spec.sint"
+else
+    bad "target por defecto: spec.sint" "exit $status; archivos: $(ls "$TMP/default")"
+fi
+
+run "$TMP/default" -target parse -o tree.out spec.ctds
+if [ $status -eq 0 ] && [ -f "$TMP/default/tree.out" ]; then
+    ok "-o <salida> -target parse"
+else
+    bad "-o <salida> -target parse" "exit $status"
+fi
+
+# Con -target scan no se parsea: un programa con error sintactico solo
+# produce tokens.
+run "$ROOT/tests/parser/errors" -target scan -o "$TMP/scan_only.lex" missing_semicolon.ctds
+if [ $status -eq 0 ] && [ -f "$TMP/scan_only.lex" ]; then
+    ok "-target scan no ejecuta el parser"
+else
+    bad "-target scan no ejecuta el parser" "exit $status: $(cat "$TMP/stderr")"
+fi
+
+# Un archivo inexistente es error de uso tambien con el target por defecto.
+run "$TMP/default" no_existe.ctds
+if [ $status -eq 2 ] && grep -qF "cannot open" "$TMP/stderr"; then
+    ok "archivo inexistente (target parse)"
+else
+    bad "archivo inexistente (target parse)" "exit $status"
 fi
 
 echo

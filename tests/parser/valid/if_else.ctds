@@ -1,0 +1,4 @@
+void f() {
+  if (a) { }
+  if (a < b) { x = 1; } else { x = 2; }
+}

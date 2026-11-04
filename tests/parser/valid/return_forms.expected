@@ -1,0 +1,17 @@
+program
+  method_decl
+    KW_VOID void
+    ID f
+    params
+    block
+      return
+  method_decl
+    KW_INT int
+    ID g
+    params
+    block
+      return
+        binary_expr
+          INT_LITERAL 1
+          PLUS +
+          INT_LITERAL 2

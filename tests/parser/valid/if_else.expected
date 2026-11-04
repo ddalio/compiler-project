@@ -1,0 +1,22 @@
+program
+  method_decl
+    KW_VOID void
+    ID f
+    params
+    block
+      if
+        ID a
+        block
+      if_else
+        binary_expr
+          ID a
+          LT <
+          ID b
+        block
+          assign
+            ID x
+            INT_LITERAL 1
+        block
+          assign
+            ID x
+            INT_LITERAL 2

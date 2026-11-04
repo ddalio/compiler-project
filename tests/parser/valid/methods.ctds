@@ -1,0 +1,2 @@
+void f() { }
+int g(int x, float y) { return x; }

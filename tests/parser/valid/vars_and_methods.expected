@@ -1,0 +1,15 @@
+program
+  var_decl
+    KW_INT int
+    ID a
+  method_decl
+    KW_VOID void
+    ID main
+    params
+    block
+      var_decl
+        KW_INT int
+        ID x
+      assign
+        ID x
+        INT_LITERAL 1

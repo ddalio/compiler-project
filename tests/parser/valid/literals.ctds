@@ -1,0 +1,1 @@
+void f() { x = 1; y = 2.5; z = true; w = false; }

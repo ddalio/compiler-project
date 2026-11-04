@@ -1,0 +1,2 @@
+lexical_then_syntax.ctds:2:9: lexical error: unexpected character '$'
+lexical_then_syntax.ctds:2:11: syntax error, unexpected integer literal

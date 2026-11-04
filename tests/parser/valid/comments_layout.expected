@@ -1,0 +1,9 @@
+program
+  var_decl
+    KW_INT int
+    ID a
+  method_decl
+    KW_VOID void
+    ID f
+    params
+    block

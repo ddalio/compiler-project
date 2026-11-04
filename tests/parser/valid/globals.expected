@@ -1,0 +1,11 @@
+program
+  var_decl
+    KW_INT int
+    ID a
+    ID b
+  var_decl
+    KW_FLOAT float
+    ID c
+  var_decl
+    KW_BOOLEAN boolean
+    ID d

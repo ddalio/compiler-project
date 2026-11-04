@@ -1,0 +1,79 @@
+program
+  method_decl
+    KW_VOID void
+    ID f
+    params
+    block
+      assign
+        ID x
+        binary_expr
+          ID a
+          PLUS +
+          binary_expr
+            ID b
+            STAR *
+            ID c
+      assign
+        ID x
+        binary_expr
+          binary_expr
+            ID a
+            STAR *
+            ID b
+          PLUS +
+          ID c
+      assign
+        ID x
+        binary_expr
+          binary_expr
+            ID a
+            MINUS -
+            ID b
+          MINUS -
+          ID c
+      assign
+        ID x
+        binary_expr
+          unary_expr
+            MINUS -
+            ID a
+          STAR *
+          ID b
+      assign
+        ID x
+        binary_expr
+          binary_expr
+            unary_expr
+              NOT !
+              ID a
+            AND &&
+            ID b
+          OR ||
+          ID c
+      assign
+        ID x
+        binary_expr
+          ID a
+          OR ||
+          binary_expr
+            ID b
+            AND &&
+            ID c
+      assign
+        ID x
+        binary_expr
+          ID a
+          EQ ==
+          binary_expr
+            ID b
+            LT <
+            ID c
+      assign
+        ID x
+        binary_expr
+          binary_expr
+            ID a
+            PLUS +
+            ID b
+          STAR *
+          ID c
