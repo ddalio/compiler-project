@@ -51,3 +51,69 @@ entendiera de otro modo, solo habría que cambiar el chequeo correspondiente.
 | 19 | Métodos `void` | Pueden invocarse como sentencia y no como parte de una expresión (regla 5). Un método con tipo puede invocarse como sentencia: el resultado se ignora. |
 | 20 | Declaración múltiple | `int x, x;` es una redeclaración (regla 1), porque ambos identificadores quedan en el mismo nivel. |
 | 21 | Etapa 2 | El árbol de parsing y el `.sint` **no cambian**. Solo se agregan posiciones a los nodos, que el `.sint` no imprime, por lo que sus tests siguen valiendo tal cual. |
+
+## 3. Diseño y decisiones clave
+
+### Posiciones en el árbol de parsing (cambio en etapas anteriores)
+
+Los mensajes de error semántico necesitan línea y columna, y hasta ahora las hojas solo guardaban el lexema.
+Para no tocar la gramática se agregó lo siguiente (la decisión 13 de la sección 2):
+
+- `Node` (`tree.h`) tiene los campos `line` y `col`, y la función `node_at` para fijarlos.
+- El scanner completa `yylloc` en cada token (macro `SET_YYLLOC`) y la macro `LEAF` fija la posición de cada hoja.
+- `bison.y` declara `%locations`. En las acciones, los nodos internos toman la posición del primer símbolo de la
+  regla (`@$`, mediante la macro `AT`); un `param` toma la de su tipo (`AT_NODE`), porque en una lista el primer
+  símbolo de la regla es la lista completa y no el parámetro.
+- El `.sint` **no imprime posiciones**, así que no cambió: los 62 tests de las etapas 1 y 2 siguen pasando sin
+  modificaciones.
+
+### AST (`ast.h`, `ast.c`)
+
+Sigue la teoría de `05-TDS-AST`: un nodo con tipo de nodo, referencia a la tabla de símbolos, información extra
+(tipo, valor, posición) y **hasta tres hijos** (`left`, `mid`, `right`), de los cuales el `if/else` usa los tres.
+La teoría resuelve las secuencias con nodos `;`; acá se eligió una **lista enlazada con `next`**: un hijo que es
+una secuencia apunta a su primer elemento. Es más simple de recorrer (un `for` en vez de un descenso por nodos `;`)
+y no agrega nodos que no representan nada del programa.
+
+| Nodo | Hijos y datos |
+|------|---------------|
+| `program` | `left` variables globales, `mid` métodos |
+| `var_decl` | nombre y tipo; **una por identificador** |
+| `method_decl` | nombre, tipo de retorno, `left` parámetros, `right` cuerpo (raíz del AST de ese método) |
+| `param` | nombre y tipo |
+| `block` | `left` variables declaradas, `mid` sentencias |
+| `assign` | `left` el identificador, `right` la expresión |
+| `call` | nombre, `left` argumentos |
+| `if` | `left` condición, `mid` bloque *then*, `right` bloque *else* (o nada) |
+| `while` | `left` condición, `mid` cuerpo |
+| `return` | `left` expresión (o nada) |
+| `empty` | — |
+| `binary_expr` / `unary_expr` | operador, operandos; posición del operador |
+| `id` | nombre |
+| `int_literal`, `float_literal`, `bool_literal` | lexema y valor |
+
+Decisiones de este diseño:
+
+- **Un AST por método.** Cada `method_decl` es la raíz del AST de su método (como pide la teoría) y el nodo
+  `program` guarda las variables globales y la lista de métodos.
+- **Una `var_decl` por identificador.** `int a, b;` genera dos nodos. Cada uno queda en la posición de su
+  identificador, de modo que un error de redeclaración apunta al nombre repetido, y el análisis semántico trata
+  igual a todos los símbolos.
+- **El AST copia lo que necesita.** Nombres y lexemas se copian; después de construirlo se puede liberar el árbol de
+  parsing, y el AST no depende de él.
+- **El AST no es dueño de los símbolos.** El campo `sym` apunta a una entrada de la tabla de símbolos, que vive en
+  la tabla (decisión 3). `ast_free` no los libera.
+- **Tipos en el AST.** Las declaraciones (`var_decl`, `param`, `method_decl`) ya traen su tipo desde la construcción.
+  Las expresiones empiezan en `TYPE_UNKNOWN` y las completa el análisis semántico. La impresión del AST muestra
+  `: tipo` solo cuando el tipo ya está calculado.
+- **El árbol de parsing sigue siendo la entrada.** La conversión se apoya en que el parser garantiza la forma del
+  árbol; si no coincide (un error del compilador y no del programa) `ast_from_tree` informa un error interno y
+  termina con código 2.
+
+### Verificación
+
+La construcción del AST se probó con un programa de prueba temporal (que no se versiona), con un programa que usa
+variables globales, parámetros, `if/else`, `while`, llamadas, `-` unario, bloques y sentencia vacía: el AST impreso
+y las posiciones de cada nodo (línea y columna) se compararon a mano con el fuente, y la ejecución con
+AddressSanitizer y UBSan no mostró errores de memoria, incluso liberando el árbol de parsing antes de usar el AST.
+
