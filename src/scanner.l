@@ -24,6 +24,7 @@
 #include <stdlib.h>
 
 #include "scanner.h"
+#include "tree.h"
 
 /* Mayor entero permitido (32 bits con signo). */
 #define INT_LITERAL_MAX 2147483647LL
@@ -52,9 +53,19 @@ static void advance(const char *text, int len)
     }
 }
 
-/* Se ejecuta antes de cada accion: fija donde empieza el token y avanza. */
+/* Se ejecuta antes de cada accion: fija donde empieza el token, avanza y
+ * deja sin valor semantico a yylval (asi, un token sin hoja nunca arrastra
+ * el valor del anterior). */
 #define YY_USER_ACTION \
-    tok_line = cur_line; tok_col = cur_col; advance(yytext, yyleng);
+    tok_line = cur_line; tok_col = cur_col; advance(yytext, yyleng); \
+    yylval.node = NULL;
+
+/* Devuelve el token `tok` junto con una hoja del arbol de parsing que guarda
+ * su lexema. Lo usan los tokens que aportan informacion al arbol (tipos,
+ * identificadores, literales y operadores). El que recibe el token es dueno
+ * de la hoja y debe liberarla (el parser lo hace; ver bison.y). */
+#define LEAF(tok) \
+    do { yylval.node = leaf_new(token_name(tok), yytext); return tok; } while (0)
 
 static void lex_error(int line, int col, const char *fmt, ...)
 {
@@ -91,25 +102,27 @@ ID      {ALPHA}({ALPHA}|{DIGIT}|_)*
 <BLOCK_COMMENT><<EOF>>  { lex_error(comment_line, comment_col,
                                     "unterminated comment");
                           BEGIN(INITIAL);
+                          tok_line = cur_line; tok_col = cur_col;
+                          yylval.node = NULL;
                           return TOK_EOF; }
 
  /* ---- Palabras reservadas ----
   * Van antes que la regla de identificadores: ante igual longitud flex elige
   * la primera regla. "whiletrue" sigue siendo un identificador porque la
   * regla ID reconoce un lexema mas largo. */
-"boolean"               { return TOK_KW_BOOLEAN; }
+"boolean"               { LEAF(TOK_KW_BOOLEAN); }
 "else"                  { return TOK_KW_ELSE; }
-"false"                 { return TOK_KW_FALSE; }
-"float"                 { return TOK_KW_FLOAT; }
+"false"                 { LEAF(TOK_KW_FALSE); }
+"float"                 { LEAF(TOK_KW_FLOAT); }
 "if"                    { return TOK_KW_IF; }
-"int"                   { return TOK_KW_INT; }
+"int"                   { LEAF(TOK_KW_INT); }
 "return"                { return TOK_KW_RETURN; }
-"true"                  { return TOK_KW_TRUE; }
-"void"                  { return TOK_KW_VOID; }
+"true"                  { LEAF(TOK_KW_TRUE); }
+"void"                  { LEAF(TOK_KW_VOID); }
 "while"                 { return TOK_KW_WHILE; }
 
  /* ---- Identificadores y literales ---- */
-{ID}                    { return TOK_ID; }
+{ID}                    { LEAF(TOK_ID); }
 
 {DIGIT}+                {
     errno = 0;
@@ -119,7 +132,7 @@ ID      {ALPHA}({ALPHA}|{DIGIT}|_)*
                   "integer literal '%s' out of range (max %lld)",
                   yytext, INT_LITERAL_MAX);
     } else {
-        return TOK_INT_LITERAL;
+        LEAF(TOK_INT_LITERAL);
     }
 }
 
@@ -130,22 +143,22 @@ ID      {ALPHA}({ALPHA}|{DIGIT}|_)*
         lex_error(tok_line, tok_col,
                   "float literal '%s' out of range", yytext);
     } else {
-        return TOK_FLOAT_LITERAL;
+        LEAF(TOK_FLOAT_LITERAL);
     }
 }
 
  /* ---- Operadores ---- */
-"+"                     { return TOK_PLUS; }
-"-"                     { return TOK_MINUS; }
-"*"                     { return TOK_STAR; }
-"/"                     { return TOK_SLASH; }
-"%"                     { return TOK_PERCENT; }
-"<"                     { return TOK_LT; }
-">"                     { return TOK_GT; }
-"=="                    { return TOK_EQ; }
-"&&"                    { return TOK_AND; }
-"||"                    { return TOK_OR; }
-"!"                     { return TOK_NOT; }
+"+"                     { LEAF(TOK_PLUS); }
+"-"                     { LEAF(TOK_MINUS); }
+"*"                     { LEAF(TOK_STAR); }
+"/"                     { LEAF(TOK_SLASH); }
+"%"                     { LEAF(TOK_PERCENT); }
+"<"                     { LEAF(TOK_LT); }
+">"                     { LEAF(TOK_GT); }
+"=="                    { LEAF(TOK_EQ); }
+"&&"                    { LEAF(TOK_AND); }
+"||"                    { LEAF(TOK_OR); }
+"!"                     { LEAF(TOK_NOT); }
 "="                     { return TOK_ASSIGN; }
 
  /* ---- Delimitadores ---- */
@@ -155,6 +168,13 @@ ID      {ALPHA}({ALPHA}|{DIGIT}|_)*
 ")"                     { return TOK_RPAREN; }
 "{"                     { return TOK_LBRACE; }
 "}"                     { return TOK_RBRACE; }
+
+ /* ---- Fin de archivo ----
+  * El EOF tiene posicion propia (el final del archivo), asi un error
+  * sintactico por "fin de archivo inesperado" se informa donde corresponde. */
+<<EOF>>                 { tok_line = cur_line; tok_col = cur_col;
+                          yylval.node = NULL;
+                          return TOK_EOF; }
 
  /* ---- Errores ---- */
 [&|]                    {
@@ -175,6 +195,11 @@ ID      {ALPHA}({ALPHA}|{DIGIT}|_)*
 %%
 
 /* INITIAL se define en el codigo generado, por eso va despues del scanner. */
+const char *scanner_source_name(void)
+{
+    return src_name;
+}
+
 void scanner_init(const char *filename, FILE *in)
 {
     src_name = filename;
