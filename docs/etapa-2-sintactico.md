@@ -69,3 +69,94 @@ aceptado:
   ejemplo, `a + b * c` reduce primero la multiplicación, `a - b - c` reduce la primera resta antes de
   leer la `c` (asociatividad a izquierda), `a == b < c` reduce primero `<`, y `! - a` reduce primero
   el `-` unario.
+
+### Cambios en la etapa 1 (tokens compartidos con bison)
+
+En la etapa 1 los códigos de los tokens eran un `enum TokenType` escrito a mano en `src/tokens.h`.
+Bison necesita los códigos de los tokens para el parser y los define por su cuenta (a partir de los
+`%token` de `bison.y`), por lo que mantener también el `enum` habría significado tener dos listas
+que deben coincidir. Se eligió que **bison sea la única definición**:
+
+- `src/tokens.h` ya no define el `enum`: incluye `build/bison.tab.h`, el header que genera
+  `bison -d`.
+- `src/tokens.c` pasó de un arreglo indexado a un `switch` sobre `enum yytokentype`. Bison numera sus
+  tokens desde 258, así que el arreglo ya no sirve. El `switch` no tiene `default`, de modo que si se
+  agrega un `%token` y se olvida su nombre, `gcc -Wswitch` avisa.
+- Los nombres `TOK_*` de `bison.y` son los mismos que ya usaba el scanner, por lo que
+  **`src/scanner.l` no necesitó cambios** y el formato del `.lex` es idéntico.
+- El `Makefile` genera `build/bison.tab.h` con `bison -d` y hace que dependan de él el scanner, `main.c`
+  y `tokens.c`. Cambiar `bison.y` recompila lo que corresponde.
+- El target `scan` funciona igual que antes: los 28 tests de la etapa 1 siguen pasando.
+
+## 4. Detalles de implementación
+
+### Árbol de parsing (`src/tree.h`, `src/tree.c`)
+
+El árbol es genérico: cada nodo tiene una etiqueta, un texto opcional (el lexema, solo en las hojas) y una
+lista de hijos. No se modelan tipos de nodo distintos porque en esta etapa el árbol solo se escribe en el
+`.sint`. Las listas de la gramática (`var_decl*`, `{id}+,`, argumentos) se arman como nodos auxiliares
+`list` y se pasan al nodo padre con `node_adopt`, de modo que en el árbol final los elementos son hijos
+directos y no hay nodos intermedios vacíos.
+
+| Construcción | Nodo y sus hijos |
+|--------------|------------------|
+| programa | `program`: declaraciones de variables y luego de métodos |
+| variables | `var_decl`: tipo (`KW_INT int`) e identificadores (`ID a`, `ID b`, ...) |
+| método | `method_decl`: tipo de retorno (`KW_INT` o `KW_VOID`), `ID`, `params`, `block` |
+| parámetros | `params` con un `param` (tipo, `ID`) por parámetro; `params` sin hijos si no hay |
+| bloque | `block`: sus `var_decl` y luego sus sentencias |
+| asignación | `assign`: `ID`, expresión |
+| llamada | `call`: `ID` y los argumentos |
+| `if` / `if` con `else` | `if`: condición, bloque; `if_else`: condición, bloque, bloque del `else` |
+| `while` | `while`: condición, bloque |
+| `return` | `return` (sin hijos) o `return` con la expresión |
+| sentencia vacía (`;`) | `empty_stmt` |
+| expresión binaria | `binary_expr`: izquierda, operador (`PLUS +`), derecha |
+| expresión unaria | `unary_expr`: operador (`MINUS -` o `NOT !`), expresión |
+| identificador, literal | hoja: `ID x`, `INT_LITERAL 3`, `FLOAT_LITERAL 1.5`, `KW_TRUE true` |
+
+Los paréntesis de una expresión no generan nodo: el agrupamiento ya está en la forma del árbol. Los signos
+de puntuación y las palabras `if`, `else`, `while` y `return` tampoco generan hojas, porque el nombre del
+nodo ya los implica.
+
+### Valores semánticos y memoria
+
+- El scanner crea la hoja (`leaf_new`) de los tokens que aportan información al árbol y la entrega en
+  `yylval.node`: tipos, identificadores, literales y operadores. Para el resto, `yylval.node` es `NULL`. La
+  macro `YY_USER_ACTION` lo reinicia en cada acción, así un token sin hoja nunca arrastra la del anterior.
+- El parser es el dueño de las hojas que recibe. Si un error sintáctico lo obliga a descartar símbolos, el
+  `%destructor { node_free($$); } <node>` libera el subárbol de cada uno.
+- Al aceptar, bison destruye también el valor del símbolo inicial; si `program` guardara la raíz, el árbol se
+  liberaría antes de imprimirlo. Por eso la regla `program` guarda la raíz en `parse_root`, devuelve
+  `NULL` como valor, y `main.c` libera el árbol después de escribirlo.
+- En el target `scan` nadie consume las hojas, así que `main.c` las libera token por token.
+- Se verificó con AddressSanitizer y UBSan (ver sección de testing) que no hay pérdidas de memoria ni
+  accesos inválidos con programas válidos, con errores léxicos y con errores sintácticos.
+
+### Errores sintácticos
+
+- Se usa `%define parse.error custom` y se implementa `yyreport_syntax_error`. Con el modo `verbose` de
+  bison los nombres de tokens salen sin un criterio uniforme (`unexpected ), expecting identifier`, pero
+  `unexpected ","`), mientras que con el modo custom los símbolos y palabras reservadas se muestran entre
+  comillas simples y las clases de tokens tal cual: `unexpected ')', expecting identifier`.
+- La posición es la del último token leído (`tok_line`, `tok_col`), que es el que el parser no pudo aceptar.
+- Se lista lo esperado solo si son hasta 4 tokens; con más la lista no ayuda.
+- El scanner tiene una regla de fin de archivo que fija la posición del EOF al final del archivo. Sin ella, un
+  error por "fin de archivo inesperado" se informaría en la posición del último token real.
+- Los errores léxicos no detienen el parseo: el scanner descarta el símbolo inválido y sigue. Si el
+  programa tiene errores léxicos, no se genera el `.sint` aunque el parseo termine bien.
+
+### Interfaz de línea de comandos
+
+- El target por defecto es `parse`. `scan` sigue disponible. `codinter` y `assembly` se rechazan con
+  "not available yet".
+- Con `-debug` en `parse`: el árbol sale por `stdout` y `yydebug` activa la traza de bison por `stderr`.
+- Como el target por defecto cambió, los tests de la etapa 1 pasaron a invocarse con `-target scan`, y el test
+  que verificaba que `-target parse` se rechazaba ahora usa `-target codinter`.
+
+### Makefile
+
+`bison -d` genera `build/bison.tab.c` y `build/bison.tab.h` en una sola corrida. El header es el objetivo
+de la regla; el `.c` depende de él con una receta vacía para que `make` no corra bison dos veces. Cambiar
+`bison.y` recompila el scanner, `main.c`, `tokens.c` y el parser, porque todos incluyen el header generado.
+

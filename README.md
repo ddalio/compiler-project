@@ -1,48 +1,75 @@
-c-tds - Compilador para el lenguaje C-TDS
+# c-tds - Compilador para el lenguaje C-TDS
+
 Taller de Diseño de Software (Cod. 3306) - DC - FCEFQyN - UNRC - 2026
 
-Estado: Etapa 1 (analisis lexico) en desarrollo.
-Documentacion de la etapa: docs/etapa-1-lexico.md
-Checklist de la etapa:     docs/etapa-1-lexico-checklist.md
+**Estado:** Etapa 2 (análisis sintáctico) en desarrollo. Etapa 1 (léxico) terminada.
 
+Documentación: [etapa 1](docs/etapa-1-lexico.md), [etapa 2](docs/etapa-2-sintactico.md).
 
-REQUISITOS
-----------
-  gcc, make, flex (probado con gcc 13, GNU Make 4.3, flex 2.6.4), bash.
-  En Ubuntu/Debian:  sudo apt install build-essential flex
+## Requisitos
 
+`gcc`, `make`, `flex`, `bison` y `bash` (probado con gcc 13, GNU Make 4.3, flex 2.6.4 y bison 3.8.2).
 
-COMPILAR
---------
-  make              genera el ejecutable ./c-tds
-  make clean        borra el ejecutable y la carpeta build/
+En Ubuntu/Debian:
 
+```
+sudo apt install build-essential flex bison
+```
 
-EJECUTAR
---------
-  ./c-tds [opcion] nombreArchivo.ctds
+## Compilar
 
-  Opciones (etapa 1):
-    -o <salida>      nombre del archivo de salida
-    -target <etapa>  etapa hasta la que se compila (disponible: scan)
-    -debug           imprime los tokens por pantalla
+```
+make          # genera el ejecutable ./c-tds
+make clean    # borra el ejecutable y la carpeta build/
+```
 
-  Ejemplos:
-    ./c-tds programa.ctds                  genera programa.lex
-    ./c-tds -o tokens.lex programa.ctds    genera tokens.lex
-    ./c-tds -debug programa.ctds           ademas imprime los tokens
+## Ejecutar
 
-  Sin -debug, una compilacion exitosa no imprime nada.
-  El archivo .lex tiene un token por linea:  linea:columna NOMBRE lexema
-  Codigos de salida: 0 = ok, 1 = errores lexicos, 2 = error de uso o de archivos.
+```
+./c-tds [opción] nombreArchivo.ctds
+```
 
+| Opción | Acción |
+|--------|--------|
+| `-o <salida>` | nombre del archivo de salida |
+| `-target <etapa>` | etapa hasta la que se compila: `scan` o `parse` (por defecto `parse`, la etapa actual) |
+| `-debug` | imprime información de depuración |
 
-TESTS
------
-  make test                          compila y corre todos los tests
-  bash tests/run_tests.sh ./c-tds    corre los tests con un ejecutable ya compilado
+Salida de cada etapa:
 
-  Casos de test (cada .ctds tiene un .expected con la salida esperada):
-    tests/scanner/valid/     programas validos  -> .expected = contenido del .lex
-    tests/scanner/errors/    errores lexicos    -> .expected = mensajes de stderr
-  Los tests de la interfaz de linea de comandos estan en tests/run_tests.sh.
+| Etapa | Archivo | Contenido |
+|-------|---------|-----------|
+| `scan` | `<nombre>.lex` | un token por línea: `línea:columna NOMBRE lexema` |
+| `parse` | `<nombre>.sint` | árbol de parsing, un nodo por línea con 2 espacios de sangría por nivel |
+
+Con `-debug` se imprime ese mismo contenido por pantalla; además, en `parse`, la traza del parser sale por `stderr`.
+
+Ejemplos:
+
+```
+./c-tds programa.ctds                  # genera programa.sint
+./c-tds -o arbol.sint programa.ctds    # genera arbol.sint
+./c-tds -target scan programa.ctds     # genera programa.lex
+./c-tds -debug programa.ctds           # además imprime el árbol
+```
+
+Sin `-debug`, una compilación exitosa no imprime nada. Los errores léxicos y sintácticos se informan por
+`stderr` como `archivo:línea:columna: ...` y, si los hay, no se genera el archivo de salida.
+
+Códigos de salida: `0` correcto, `1` errores en el programa fuente, `2` error de uso o de archivos.
+
+## Tests
+
+```
+make test                          # compila y corre todos los tests
+bash tests/run_tests.sh ./c-tds    # corre los tests con un ejecutable ya compilado
+```
+
+Casos de test (cada `.ctds` tiene un `.expected` con la salida esperada):
+
+| Carpeta | Casos | `.expected` |
+|---------|-------|-------------|
+| `tests/scanner/valid/` | programas válidos | contenido del `.lex` |
+| `tests/scanner/errors/` | errores léxicos | mensajes de `stderr` |
+
+Los tests de la etapa 1 usan `-target scan`. Los tests de la interfaz de línea de comandos están en `tests/run_tests.sh`.
