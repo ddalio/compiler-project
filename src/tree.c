@@ -23,6 +23,14 @@ Node *node_new(const char *label)
     n->kids = NULL;
     n->nkids = 0;
     n->cap = 0;
+    n->line = n->col = 0;
+    return n;
+}
+
+Node *node_at(Node *n, int line, int col)
+{
+    n->line = line;
+    n->col = col;
     return n;
 }
 

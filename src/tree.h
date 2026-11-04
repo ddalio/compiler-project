@@ -16,6 +16,7 @@ typedef struct Node {
     struct Node **kids;
     int nkids;
     int cap;                /* capacidad del arreglo kids */
+    int line, col;          /* posicion (desde 1) en el fuente; 0 = sin dato */
 } Node;
 
 /* Nodo interno sin hijos. `label` debe ser una cadena que viva todo el
@@ -24,6 +25,11 @@ Node *node_new(const char *label);
 
 /* Hoja: `label` es el nombre del token y `text` su lexema (se copia). */
 Node *leaf_new(const char *label, const char *text);
+
+/* Fija la posicion del nodo en el fuente. Devuelve `n` para poder encadenar
+ * (ej: node_at(node2(...), linea, columna)). La posicion no se imprime en el
+ * .sint; la usan las etapas siguientes para informar errores. */
+Node *node_at(Node *n, int line, int col);
 
 /* Agrega `child` al final de los hijos de `parent`. Devuelve `parent`. */
 Node *node_add(Node *parent, Node *child);

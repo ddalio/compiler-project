@@ -28,6 +28,11 @@
  * que empieza con un identificador diria "expecting end of file"). */
 %define lr.default-reduction accepting
 
+/* Cada simbolo tiene una ubicacion (@1, @2, ..., @$ para la regla completa)
+ * que completa el scanner en yylloc. Se usa para ponerle posicion a los nodos
+ * del arbol, que despues necesita el analisis semantico. */
+%locations
+
 %code requires {
 #include "tree.h"
 }
@@ -36,6 +41,11 @@
 #include <stdio.h>
 #include "parser.h"
 #include "scanner.h"
+
+/* Posicion de un nodo: la del primer simbolo de la regla (loc = @$). */
+#define AT(n, loc) node_at((n), (loc).first_line, (loc).first_column)
+/* Posicion de un nodo tomada de otro nodo (una hoja con su posicion). */
+#define AT_NODE(n, src) node_at((n), (src)->line, (src)->col)
 }
 
 /* Valor semantico: todo simbolo con valor es un nodo del arbol. */
@@ -148,7 +158,7 @@ method_decl_list
  * Arbol: var_decl(tipo, id, id, ...) */
 var_decl
     : type id_list TOK_SEMICOLON
-        { $$ = node_adopt(node1("var_decl", $1), $2); }
+        { $$ = AT(node_adopt(node1("var_decl", $1), $2), @$); }
     ;
 
 id_list
@@ -160,9 +170,9 @@ id_list
  * Arbol: method_decl(tipo de retorno, id, params, block) */
 method_decl
     : type TOK_ID TOK_LPAREN param_list_opt TOK_RPAREN block
-        { $$ = node4("method_decl", $1, $2, $4, $6); }
+        { $$ = AT(node4("method_decl", $1, $2, $4, $6), @$); }
     | TOK_KW_VOID TOK_ID TOK_LPAREN param_list_opt TOK_RPAREN block
-        { $$ = node4("method_decl", $1, $2, $4, $6); }
+        { $$ = AT(node4("method_decl", $1, $2, $4, $6), @$); }
     ;
 
 /* Arbol: params(param(tipo, id), ...); "params" sin hijos si no hay. */
@@ -173,9 +183,9 @@ param_list_opt
 
 param_list
     : type TOK_ID
-        { $$ = node1("params", node2("param", $1, $2)); }
+        { $$ = node1("params", AT_NODE(node2("param", $1, $2), $1)); }
     | param_list TOK_COMMA type TOK_ID
-        { $$ = node_add($1, node2("param", $3, $4)); }
+        { $$ = node_add($1, AT_NODE(node2("param", $3, $4), $3)); }
     ;
 
 /* <block> -> { <var_decl>* <statement>* }
@@ -184,7 +194,7 @@ param_list
  * Arbol: block(var_decl..., sentencias...) */
 block
     : TOK_LBRACE block_var_decls statement_list TOK_RBRACE
-        { $$ = node_adopt(node_adopt(node_new("block"), $2), $3); }
+        { $$ = AT(node_adopt(node_adopt(node_new("block"), $2), $3), @$); }
     ;
 
 block_var_decls
@@ -212,21 +222,21 @@ type
  * while(cond, body), return / return(expr), empty_stmt, block. */
 statement
     : TOK_ID TOK_ASSIGN expr TOK_SEMICOLON
-        { $$ = node2("assign", $1, $3); }
+        { $$ = AT(node2("assign", $1, $3), @$); }
     | method_call TOK_SEMICOLON
         { $$ = $1; }
     | TOK_KW_IF TOK_LPAREN expr TOK_RPAREN block
-        { $$ = node2("if", $3, $5); }
+        { $$ = AT(node2("if", $3, $5), @$); }
     | TOK_KW_IF TOK_LPAREN expr TOK_RPAREN block TOK_KW_ELSE block
-        { $$ = node3("if_else", $3, $5, $7); }
+        { $$ = AT(node3("if_else", $3, $5, $7), @$); }
     | TOK_KW_WHILE expr block
-        { $$ = node2("while", $2, $3); }
+        { $$ = AT(node2("while", $2, $3), @$); }
     | TOK_KW_RETURN TOK_SEMICOLON
-        { $$ = node_new("return"); }
+        { $$ = AT(node_new("return"), @$); }
     | TOK_KW_RETURN expr TOK_SEMICOLON
-        { $$ = node1("return", $2); }
+        { $$ = AT(node1("return", $2), @$); }
     | TOK_SEMICOLON
-        { $$ = node_new("empty_stmt"); }
+        { $$ = AT(node_new("empty_stmt"), @$); }
     | block
         { $$ = $1; }
     ;
@@ -235,7 +245,7 @@ statement
  * Arbol: call(id, argumento, ...) */
 method_call
     : TOK_ID TOK_LPAREN arg_list_opt TOK_RPAREN
-        { $$ = node_adopt(node1("call", $1), $3); }
+        { $$ = AT(node_adopt(node1("call", $1), $3), @$); }
     ;
 
 arg_list_opt
@@ -258,18 +268,18 @@ expr
     : TOK_ID                        { $$ = $1; }
     | method_call                   { $$ = $1; }
     | literal                       { $$ = $1; }
-    | expr TOK_PLUS expr            { $$ = node3("binary_expr", $1, $2, $3); }
-    | expr TOK_MINUS expr           { $$ = node3("binary_expr", $1, $2, $3); }
-    | expr TOK_STAR expr            { $$ = node3("binary_expr", $1, $2, $3); }
-    | expr TOK_SLASH expr           { $$ = node3("binary_expr", $1, $2, $3); }
-    | expr TOK_PERCENT expr         { $$ = node3("binary_expr", $1, $2, $3); }
-    | expr TOK_LT expr              { $$ = node3("binary_expr", $1, $2, $3); }
-    | expr TOK_GT expr              { $$ = node3("binary_expr", $1, $2, $3); }
-    | expr TOK_EQ expr              { $$ = node3("binary_expr", $1, $2, $3); }
-    | expr TOK_AND expr             { $$ = node3("binary_expr", $1, $2, $3); }
-    | expr TOK_OR expr              { $$ = node3("binary_expr", $1, $2, $3); }
-    | TOK_MINUS expr %prec UMINUS   { $$ = node2("unary_expr", $1, $2); }
-    | TOK_NOT expr                  { $$ = node2("unary_expr", $1, $2); }
+    | expr TOK_PLUS expr            { $$ = AT(node3("binary_expr", $1, $2, $3), @$); }
+    | expr TOK_MINUS expr           { $$ = AT(node3("binary_expr", $1, $2, $3), @$); }
+    | expr TOK_STAR expr            { $$ = AT(node3("binary_expr", $1, $2, $3), @$); }
+    | expr TOK_SLASH expr           { $$ = AT(node3("binary_expr", $1, $2, $3), @$); }
+    | expr TOK_PERCENT expr         { $$ = AT(node3("binary_expr", $1, $2, $3), @$); }
+    | expr TOK_LT expr              { $$ = AT(node3("binary_expr", $1, $2, $3), @$); }
+    | expr TOK_GT expr              { $$ = AT(node3("binary_expr", $1, $2, $3), @$); }
+    | expr TOK_EQ expr              { $$ = AT(node3("binary_expr", $1, $2, $3), @$); }
+    | expr TOK_AND expr             { $$ = AT(node3("binary_expr", $1, $2, $3), @$); }
+    | expr TOK_OR expr              { $$ = AT(node3("binary_expr", $1, $2, $3), @$); }
+    | TOK_MINUS expr %prec UMINUS   { $$ = AT(node2("unary_expr", $1, $2), @$); }
+    | TOK_NOT expr                  { $$ = AT(node2("unary_expr", $1, $2), @$); }
     | TOK_LPAREN expr TOK_RPAREN    { $$ = $2; }
     ;
 

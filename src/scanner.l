@@ -53,19 +53,28 @@ static void advance(const char *text, int len)
     }
 }
 
-/* Se ejecuta antes de cada accion: fija donde empieza el token, avanza y
- * deja sin valor semantico a yylval (asi, un token sin hoja nunca arrastra
- * el valor del anterior). */
+/* Fija yylloc (la ubicacion del token que usa bison con %locations) a partir
+ * de tok_line/tok_col (inicio) y cur_line/cur_col (fin, ya avanzado). */
+#define SET_YYLLOC() \
+    do { yylloc.first_line = tok_line; yylloc.first_column = tok_col; \
+         yylloc.last_line = cur_line;  yylloc.last_column = cur_col; } while (0)
+
+/* Se ejecuta antes de cada accion: fija donde empieza el token, avanza,
+ * guarda la ubicacion en yylloc y deja sin valor semantico a yylval (asi, un
+ * token sin hoja nunca arrastra la del anterior). */
 #define YY_USER_ACTION \
     tok_line = cur_line; tok_col = cur_col; advance(yytext, yyleng); \
-    yylval.node = NULL;
+    SET_YYLLOC(); yylval.node = NULL;
 
 /* Devuelve el token `tok` junto con una hoja del arbol de parsing que guarda
- * su lexema. Lo usan los tokens que aportan informacion al arbol (tipos,
- * identificadores, literales y operadores). El que recibe el token es dueno
- * de la hoja y debe liberarla (el parser lo hace; ver bison.y). */
+ * su lexema y su posicion. Lo usan los tokens que aportan informacion al
+ * arbol (tipos, identificadores, literales y operadores). El que recibe el
+ * token es dueno de la hoja y debe liberarla (el parser lo hace; ver
+ * bison.y). */
 #define LEAF(tok) \
-    do { yylval.node = leaf_new(token_name(tok), yytext); return tok; } while (0)
+    do { yylval.node = node_at(leaf_new(token_name(tok), yytext), \
+                               tok_line, tok_col); \
+         return tok; } while (0)
 
 static void lex_error(int line, int col, const char *fmt, ...)
 {
@@ -103,7 +112,7 @@ ID      {ALPHA}({ALPHA}|{DIGIT}|_)*
                                     "unterminated comment");
                           BEGIN(INITIAL);
                           tok_line = cur_line; tok_col = cur_col;
-                          yylval.node = NULL;
+                          SET_YYLLOC(); yylval.node = NULL;
                           return TOK_EOF; }
 
  /* ---- Palabras reservadas ----
@@ -173,7 +182,7 @@ ID      {ALPHA}({ALPHA}|{DIGIT}|_)*
   * El EOF tiene posicion propia (el final del archivo), asi un error
   * sintactico por "fin de archivo inesperado" se informa donde corresponde. */
 <<EOF>>                 { tok_line = cur_line; tok_col = cur_col;
-                          yylval.node = NULL;
+                          SET_YYLLOC(); yylval.node = NULL;
                           return TOK_EOF; }
 
  /* ---- Errores ---- */
