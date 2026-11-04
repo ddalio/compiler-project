@@ -11,7 +11,8 @@
  * de error. Reinicia posicion (linea 1, columna 1) y contador de errores. */
 void scanner_init(const char *filename, FILE *in);
 
-/* Devuelve el siguiente token (un TokenType) o TOK_EOF al terminar.
+/* Devuelve el siguiente token (uno de los TOK_* de bison.y) o TOK_EOF al
+ * terminar.
  * Los errores lexicos se informan por stderr y el scanner continua. */
 int yylex(void);
 
