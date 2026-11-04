@@ -15,7 +15,7 @@ decisiones tomadas:
 
 | # | Tema | Decisión |
 |---|------|----------|
-| 1 | Alcance | Solo se implementa el scanner. `-target scan` es el único target disponible; `parse`, `codinter` y `assembly` se rechazan con un mensaje. `-opt` todavía no existe. |
+| 1 | Alcance | Solo se implementa el scanner. En esta etapa `-target scan` era el único target disponible; los demás se rechazaban con un mensaje. `-opt` todavía no existe. _(Actualización etapa 2: se agregó el target `parse`, que pasó a ser el target por defecto; `-target scan` sigue funcionando igual.)_ |
 | 2 | Identificadores | Exactamente la gramática: `alpha (alpha \| digit \| '_')*`. Un identificador **no puede empezar con `_`**; el `_` suelto es un error léxico. |
 | 3 | Literales reales | Exactamente la gramática: `digit+ '.' digit+`. Ni `1.` ni `.5` son literales: el `.` suelto es un error léxico. |
 | 4 | Literales enteros | Solo dígitos, sin signo: `-5` son dos tokens (`MINUS`, `INT_LITERAL`), como pide la gramática (`- <expr>`). Un entero mayor a 2147483647 es un error léxico. Los ceros a la izquierda se aceptan y valen en decimal (`007` = 7). |
@@ -38,8 +38,8 @@ decisiones tomadas:
 |---------|-----------------|
 | `src/scanner.l` | Especificación flex: expresiones regulares, posición de los tokens y errores léxicos. |
 | `src/scanner.h` | Interfaz del scanner (`scanner_init`, `yylex`, posición y cantidad de errores). |
-| `src/tokens.h`, `src/tokens.c` | Enumeración `TokenType` y nombre imprimible de cada token. |
-| `src/main.c` | Línea de comandos, validación de argumentos y escritura del `.lex`. |
+| `src/tokens.h`, `src/tokens.c` | Nombre imprimible de cada token. _(Actualización etapa 2: los códigos de los tokens dejaron de ser un `enum TokenType` escrito a mano; ahora los define bison, ver la documentación de la etapa 2.)_ |
+| `src/main.c` | Línea de comandos, validación de argumentos y escritura del `.lex`. _(Actualización etapa 2: también ejecuta el parser.)_ |
 
 **Alternativas consideradas**
 
@@ -69,7 +69,7 @@ decisiones tomadas:
   verifica con `strtoll` (`ERANGE` o valor mayor a 2147483647).
 - **`&` y `|` sueltos.** Tienen una regla propia que sugiere `&&` / `||` en el mensaje.
 - **Tests.** Los `.expected` están escritos a mano a partir de la especificación, no generados por el
-  scanner. Ver `tests/run_tests.sh` y la sección de comandos del `README.txt`.
+  scanner. Ver `tests/run_tests.sh` y la sección de comandos del `README.md`. Desde la etapa 2 estos tests se ejecutan con `-target scan`.
 
 ## 5. Problemas conocidos
 

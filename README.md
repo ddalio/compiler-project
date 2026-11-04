@@ -4,7 +4,7 @@ Taller de Diseño de Software (Cod. 3306) - DC - FCEFQyN - UNRC - 2026
 
 **Estado:** Etapa 2 (análisis sintáctico) en desarrollo. Etapa 1 (léxico) terminada.
 
-Documentación: [etapa 1](docs/etapa-1-lexico.md), [etapa 2](docs/etapa-2-sintactico.md).
+Documentación: [etapa 1](docs/etapa-1-lexico.md), [etapa 2](docs/etapa-2-sintactico.md). Para estudiar el código (qué hace cada archivo y cada función): [guía del código](docs/guia-del-codigo.md).
 
 ## Requisitos
 
@@ -62,6 +62,7 @@ Códigos de salida: `0` correcto, `1` errores en el programa fuente, `2` error d
 
 ```
 make test                          # compila y corre todos los tests
+make test-asan                     # los mismos tests con sanitizers (detecta errores de memoria)
 bash tests/run_tests.sh ./c-tds    # corre los tests con un ejecutable ya compilado
 ```
 
@@ -71,5 +72,7 @@ Casos de test (cada `.ctds` tiene un `.expected` con la salida esperada):
 |---------|-------|-------------|
 | `tests/scanner/valid/` | programas válidos | contenido del `.lex` |
 | `tests/scanner/errors/` | errores léxicos | mensajes de `stderr` |
+| `tests/parser/valid/` | programas válidos | contenido del `.sint` (árbol de parsing) |
+| `tests/parser/errors/` | errores léxicos y sintácticos | mensajes de `stderr` |
 
-Los tests de la etapa 1 usan `-target scan`. Los tests de la interfaz de línea de comandos están en `tests/run_tests.sh`.
+Los tests del scanner usan `-target scan`. Los tests de la interfaz de línea de comandos están en `tests/run_tests.sh`.

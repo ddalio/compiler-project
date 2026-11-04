@@ -2,6 +2,7 @@
 
 Compilador **c-tds** para C-TDS. Implementación en C con **flex**, **bison** y **make**.
 Checklist de la etapa: [etapa-2-sintactico-checklist.md](etapa-2-sintactico-checklist.md).
+Explicación de cada archivo y función: [guia-del-codigo.md](guia-del-codigo.md).
 
 ## 1. División del trabajo
 
@@ -141,6 +142,12 @@ nodo ya los implica.
   comillas simples y las clases de tokens tal cual: `unexpected ')', expecting identifier`.
 - La posición es la del último token leído (`tok_line`, `tok_col`), que es el que el parser no pudo aceptar.
 - Se lista lo esperado solo si son hasta 4 tokens; con más la lista no ayuda.
+- Se declara `%define lr.default-reduction accepting`. Por defecto bison hace "reducciones por defecto":
+  reduce aunque el token siguiente no sea válido y recién después detecta el error, por lo que la lista de
+  tokens esperados queda incompleta o engañosa. Un caso real que apareció en los tests: un programa que
+  empieza con un identificador (`x = 1;`) decía `expecting end of file`, y `g(1 2)` decía `expecting ')'` sin
+  mencionar `,` ni los operadores. Con la opción el parser solo reduce con un token válido y el mensaje
+  es exacto. El costo es una tabla algo más grande, irrelevante para este lenguaje.
 - El scanner tiene una regla de fin de archivo que fija la posición del EOF al final del archivo. Sin ella, un
   error por "fin de archivo inesperado" se informaría en la posición del último token real.
 - Los errores léxicos no detienen el parseo: el scanner descarta el símbolo inválido y sigue. Si el
@@ -159,4 +166,60 @@ nodo ya los implica.
 `bison -d` genera `build/bison.tab.c` y `build/bison.tab.h` en una sola corrida. El header es el objetivo
 de la regla; el `.c` depende de él con una receta vacía para que `make` no corra bison dos veces. Cambiar
 `bison.y` recompila el scanner, `main.c`, `tokens.c` y el parser, porque todos incluyen el header generado.
+
+## 5. Testing
+
+Los casos están en `tests/parser/` y los ejecuta `tests/run_tests.sh` (`make test`). Los `.expected` están
+escritos a mano a partir de la gramática, no copiados de la salida del compilador, y los casos de errores de
+`expecting` se razonaron contra la gramática (ver la nota de `lr.default-reduction` en la sección 4).
+
+**Casos válidos (`tests/parser/valid/`, el `.expected` es el árbol del `.sint`):**
+
+| Caso | Qué cubre |
+|------|-----------|
+| `empty` | Archivo vacío: el programa vacío es válido. |
+| `globals` | Variables globales, lista `int a, b;` y los tres tipos. |
+| `methods` | Métodos `void` y con tipo, con y sin parámetros. |
+| `vars_and_methods` | Variables globales seguidas de métodos, variable local y asignación. |
+| `if_else` | `if` con y sin `else`. |
+| `while` | `while` con paréntesis y sin ellos (`while x < 3 {...}`). |
+| `return_forms` | `return;` y `return expr;`. |
+| `blocks` | Sentencia vacía `;`, bloques anidados, variables locales en un bloque interno. |
+| `calls` | Llamada como sentencia, con argumentos, y como parte de una expresión. |
+| `literals` | Literales entero, real, `true` y `false`. |
+| `precedence` | Precedencia y asociatividad: `a + b * c`, `a * b + c`, `a - b - c`, `-a * b`, `!a && b \|\| c`, `a \|\| b && c`, `a == b < c` y paréntesis. |
+| `spec_example` | Programa de ejemplo de la especificación. |
+| `comments_layout` | Comentarios, tabs y saltos de línea que no deben cambiar el árbol. |
+
+**Casos inválidos (`tests/parser/errors/`, el `.expected` es el contenido de `stderr`):**
+
+| Caso | Qué cubre |
+|------|-----------|
+| `missing_semicolon` | Falta `;` antes de `}`. |
+| `unclosed_brace`, `error_at_eof` | Error al final del archivo (posición del EOF). |
+| `error_first_line` | Error en la primera línea. |
+| `else_without_if` | `else` sin `if`. |
+| `decl_after_statement` | Declaración de variable después de una sentencia en un bloque. |
+| `if_without_braces` | Cuerpo del `if` sin llaves. |
+| `incomplete_expr` | Expresión incompleta (`1 + ;`). |
+| `param_without_name`, `trailing_comma_params` | Parámetros mal formados. |
+| `var_after_method` | Variable global después de un método. |
+| `call_missing_comma` | Argumentos sin coma. |
+| `nested_method` | Método declarado dentro de otro. |
+| `while_extra_paren` | Paréntesis de cierre de más. |
+| `statement_at_top_level` | Sentencia fuera de un método. |
+| `lexical_then_syntax` | Un error léxico y un error sintáctico en el mismo programa: salen los dos, en orden. |
+| `only_lexical_error` | Programa sintácticamente correcto con un carácter ilegal: no se genera `.sint`. |
+
+**Línea de comandos (en el script):** el target por defecto genera `<fuente>.sint` y no `.lex`; `-o` con
+`-target parse`; `-target scan` no ejecuta el parser (un programa con error sintáctico igual genera tokens);
+archivo inexistente con el target por defecto.
+
+**Regresión y memoria:** los tests de la etapa 1 siguen pasando (con `-target scan`). `make test-asan` corre los
+62 casos con un ejecutable compilado con AddressSanitizer y UBSan: no hay pérdidas de memoria ni accesos
+inválidos.
+
+**Hallazgos del testing:** al escribir los casos de errores se detectó que los mensajes `expecting` eran
+engañosos por las reducciones por defecto de bison. Se corrigió con `%define lr.default-reduction accepting`
+(ver sección 4).
 
