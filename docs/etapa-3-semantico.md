@@ -51,6 +51,7 @@ entendiera de otro modo, solo habría que cambiar el chequeo correspondiente.
 | 19 | Métodos `void` | Pueden invocarse como sentencia y no como parte de una expresión (regla 5). Un método con tipo puede invocarse como sentencia: el resultado se ignora. |
 | 20 | Declaración múltiple | `int x, x;` es una redeclaración (regla 1), porque ambos identificadores quedan en el mismo nivel. |
 | 21 | Etapa 2 | El árbol de parsing y el `.sint` **no cambian**. Solo se agregan posiciones a los nodos, que el `.sint` no imprime, por lo que sus tests siguen valiendo tal cual. |
+| 22 | Programa de ejemplo de la spec | El programa de ejemplo de `01-TDS-spec-lenguaje` es **sintácticamente** válido pero **no semánticamente**: su `main` es `void` y ejecuta `return 1;` y `return inc(y);`, lo que viola la regla 6 (en un método `void`, `return` no puede llevar expresión). El compilador informa esos dos errores. Se respeta la regla y no se la relaja para que el ejemplo pase; en los tests semánticos el ejemplo se usa como caso inválido y se agrega una versión corregida como caso válido. |
 
 ## 3. Diseño y decisiones clave
 
@@ -195,4 +196,51 @@ espera (cada identificador vinculado con su símbolo y nivel). Se probaron adem�
 cada mensaje de la tabla (más casos como declarar dos veces en la misma línea, usar una variable fuera de su bloque,
 un parámetro que oculta a un método y llamar a un método antes de su declaración) y los mensajes y posiciones
 coinciden con los calculados a mano a partir del fuente. Sin errores de memoria con AddressSanitizer y UBSan.
+
+### Análisis semántico, parte 2: tipos (`semantic.c`, `types.c`)
+
+El mismo recorrido calcula el tipo de cada expresión (campo `type` del AST) y verifica las reglas de tipos. El tipo se
+calcula de abajo hacia arriba: un literal tiene su tipo, un identificador el de su símbolo, una llamada el de retorno
+del método, y una operación lo deduce de sus operandos.
+
+La compatibilidad de tipos está en `types_compatible(esperado, actual)` y es la decisión 14: iguales, o `int` y `float`
+entre sí (en asignación, `return`, argumentos y `==`). `boolean` solo es compatible con `boolean`.
+
+| Regla | Qué verifica | Mensaje (posición) |
+|-------|--------------|--------------------|
+| 4 | Cantidad de argumentos | `call to 'f' has 1 argument, expected 2` (nombre de la llamada) |
+| 4 | Tipo de cada argumento | `argument 2 of call to 'f' has type int, expected boolean` (el argumento) |
+| 5 | Un método `void` no se usa como expresión | `'v' returns no value and cannot be used in an expression` (la llamada) |
+| 6 | `return` con valor en un método `void`, o sin valor en uno con tipo | `void method 'f' cannot return a value`, `method 'g' must return a value of type int` (el `return`) |
+| 7 | Tipo del valor de `return` | `cannot return boolean from method 'h' of type int` (el `return`) |
+| 9 | Condición de `if` / `while` | `condition of 'if' must be boolean, got int` (la sentencia) |
+| 10 | Operandos de `+ - * / % < >` y de `-` unario | `operands of '+' must be int or float, got boolean and int`, `operand of '-' must be int or float, got boolean` (el operador) |
+| 11 | Operandos de `==` | `operands of '==' must have the same type, got int and boolean` (el operador) |
+| 12 | Operandos de `&&`, `\|\|` y `!` | `operands of '&&' must be boolean, got int and boolean`, `operand of '!' must be boolean, got int` (el operador) |
+| 13 | Asignación | `cannot assign boolean to 'x' of type int` (la ubicación) |
+| 14 | Coerciones `int` / `float` | No es un error: es lo que relaja a las reglas 4, 7, 11 y 13 |
+| decisión 17 | Método con tipo sin `return` en algún camino | `method 'f' may reach the end without returning a value` (nombre del método) |
+
+Decisiones y detalles:
+
+- **Sin errores en cascada** (decisión 12). Una expresión con error tiene `TYPE_ERROR`, que es compatible con todo. Si un
+  operando ya tiene error, la operación no informa nada y su resultado también es `TYPE_ERROR`; por eso un identificador
+  sin declarar se informa una sola vez aunque se use dentro de varias operaciones, condiciones o asignaciones.
+- **Resultado de las operaciones:** aritméticas, `float` si algún operando es `float` y `int` en otro caso (la división de
+  dos `int` es `int`); relacionales, `==`, `&&`, `||` y `!`, `boolean`; `-` unario, el tipo del operando.
+- **Un solo mensaje por operador**, con los tipos de los dos operandos, en la posición del operador (decisión 13).
+- **`return` sin valor en un método con tipo es un error**, porque la spec dice que esos métodos "únicamente retornan con
+  una sentencia `return` (que debe tener asociado una expresión)".
+- **Análisis de `return` en todos los caminos** (decisión 17, `always_returns`): un `return` garantiza el retorno; un bloque,
+  si alguna de sus sentencias lo garantiza; un `if` con `else`, si lo garantizan las dos ramas; un `while`, solo si su
+  condición es el literal `true`. Es conservador: un `while (x) { return 1; }` no se acepta como garantía. El error se
+  informa en el nombre del método, porque el AST no guarda la posición de la llave de cierre, y después de los errores del
+  cuerpo del método.
+- **El programa de ejemplo de la spec no pasa el análisis semántico** (decisión 22): `main` es `void` y retorna valores.
+
+Verificación: con un programa temporal (que no se versiona) se probaron 18 programas, uno o más por cada mensaje de la
+tabla, más los casos que **no** deben dar error (coerciones `int`/`float` en asignación y `return`, argumentos `float` donde
+se espera `int`, `while (true)` sin `return` posterior, `if/else` con `return` en ambas ramas). Los mensajes y posiciones
+coinciden con los calculados a mano. Se comprobó también que los tipos se propagan en el AST (`1 + 2.5` es `float`,
+`f < 3 && true` es `boolean`) y que no hay errores de memoria con AddressSanitizer y UBSan.
 

@@ -244,6 +244,8 @@ compatible con todo para no encadenar errores).
 | Función | Qué hace |
 |---------|----------|
 | `const char *type_name(Type t)` | Nombre del tipo para mensajes y salidas: `"int"`, `"float"`, `"boolean"`, `"void"`, `"error"`, `"unknown"`. |
+| `int type_is_numeric(Type t)` | Verdadero para `int` y `float`. |
+| `int types_compatible(Type expected, Type actual)` | Indica si un valor de tipo `actual` sirve donde se espera `expected`: tipos iguales, o `int` y `float` entre sí en cualquier sentido (regla 14: coerciones y truncamientos). `boolean` no es compatible con ningún otro tipo. `TYPE_ERROR` es compatible con todo, para no encadenar errores. |
 
 ## 10. `src/ast.h` y `src/ast.c`
 
@@ -347,9 +349,17 @@ usos, un nombre que todavía no está en la tabla es un uso antes de la declarac
 Qué niveles abre el recorrido: el global (ya abierto), uno por cada **método** (con sus parámetros y las variables de
 su cuerpo, que comparten nivel) y uno por cada **bloque anidado** (el cuerpo de un `if`/`while` o un bloque suelto).
 
-Esta parte del análisis (nombres y alcance) verifica: la regla 1 (redeclaración), la 2 (uso antes de declarar), la 3
-(`main`) y la 8 (la ubicación de una asignación), más que un método no se use como variable ni una variable como
-método. Las reglas de tipos se agregan en la parte siguiente.
+El análisis verifica **nombres y alcance**: la regla 1 (redeclaración), la 2 (uso antes de declarar), la 3 (`main`) y la 8
+(la ubicación de una asignación), más que un método no se use como variable ni una variable como método. Y **tipos**: la
+regla 4 (argumentos de una llamada), la 5 (un método `void` no es una expresión), las 6 y 7 (`return`), la 9
+(condiciones), la 10 (operandos aritméticos y relacionales), la 11 (`==`), la 12 (operadores lógicos), la 13
+(asignación) y la 14 (coerciones `int`/`float`), más que un método con tipo no pueda terminar sin `return`.
+
+**Cómo se calcula el tipo de una expresión** (campo `type` del AST): un literal tiene su tipo; un identificador, el de su
+símbolo; una llamada, el tipo de retorno del método. Una operación aritmética da `float` si algún operando es `float` y
+`int` en otro caso; las relaciones (`< > ==`) y los operadores lógicos dan `boolean`; el `-` unario conserva el tipo
+del operando. Si una operación tiene un error, su tipo es `TYPE_ERROR`, que es compatible con todo: así un error no
+produce otros en las expresiones que lo contienen (por eso `y + 1` con `y` sin declarar informa un solo error).
 
 `semantic.h` expone una sola función:
 
@@ -357,8 +367,8 @@ método. Las reglas de tipos se agregan en la parte siguiente.
 |---------|----------|
 | `int semantic_analyze(Ast *program, const char *filename, SymTab *tab)` | Analiza el programa (la raíz `AST_PROGRAM`). `tab` debe ser una tabla recién creada. Informa cada error por `stderr` (`archivo:línea:col: semantic error: mensaje`), sigue después de cada uno y devuelve la cantidad de errores. Deja en el AST los símbolos (`sym`) y los tipos de identificadores, llamadas y literales. |
 
-Funciones internas de `semantic.c` (todas `static`). `Ctx` agrupa el estado: la tabla, el nombre del archivo y la cantidad
-de errores.
+Funciones internas de `semantic.c` (todas `static`). `Ctx` agrupa el estado: la tabla, el nombre del archivo, la cantidad
+de errores y el método que se está analizando (lo necesita `return`).
 
 | Función | Qué hace |
 |---------|----------|
@@ -366,9 +376,16 @@ de errores.
 | `declare(c, decl, cls)` | Inserta una declaración (variable, parámetro o método) en el nivel actual y guarda el símbolo en `decl->sym`. Si el nombre ya está en ese nivel informa `redeclaration of 'x' (previous declaration at L:C)` (regla 1) y la declaración queda sin símbolo. |
 | `resolve_variable(c, id)` | Resuelve un identificador usado como valor o como ubicación: busca desde el nivel actual al global. Si no existe: `'x' undeclared` (reglas 2 y 8); si es un método: `'x' is a method, not a variable`. Si está bien, `id->sym` es el símbolo y `id->type` su tipo; si no, el tipo es `TYPE_ERROR`. |
 | `resolve_call(c, call)` | Igual para el nombre de una llamada: tiene que existir (`'f' undeclared`) y ser un método (`'x' is not a method`). El tipo de la llamada es el tipo de retorno del método. |
-| `analyze_expr(c, e)` | Recorre una expresión: resuelve identificadores y llamadas (y sus argumentos), da tipo a los literales y baja por las operaciones. |
-| `analyze_stmt(c, s)` | Recorre una sentencia: la ubicación y la expresión de una asignación, la condición y los bloques de `if`/`while`, el valor de `return`, los bloques sueltos. |
+| `analyze_expr(c, e)` | Calcula el tipo de una expresión y verifica sus reglas: resuelve identificadores, da tipo a los literales, delega en `analyze_call`, `analyze_binary` o `analyze_unary`. Una llamada usada como expresión no puede ser de un método `void` (regla 5: `'v' returns no value and cannot be used in an expression`). |
+| `analyze_call(c, call)` | Analiza una llamada (como sentencia o como expresión): la resuelve, analiza los argumentos y verifica la regla 4. Si la cantidad no coincide: `call to 'f' has 1 argument, expected 2`; si coincide, compara el tipo de cada argumento con el del parámetro (con coerciones): `argument 2 of call to 'f' has type int, expected boolean`. |
+| `analyze_binary(c, e)` | Analiza una operación binaria. Si un operando ya tiene error, no informa nada y el resultado es `TYPE_ERROR`. Para `==` verifica la regla 11 (`operands of '==' must have the same type, got int and boolean`); para `&&` y `||`, la 12 (`operands of '&&' must be boolean, got ...`); para el resto llama a `check_numeric_op`. |
+| `check_numeric_op(c, e, l, r)` | Regla 10 (`+ - * / % < >`): los dos operandos deben ser `int` o `float` (`operands of '+' must be int or float, got boolean and int`). Calcula el tipo del resultado: `boolean` para `<` y `>`; `float` si algún operando es `float`, si no `int`. |
+| `analyze_unary(c, e)` | `!` exige `boolean` (regla 12: `operand of '!' must be boolean, got int`) y `-` exige `int` o `float` (regla 10). |
+| `analyze_stmt(c, s)` | Recorre una sentencia: en una asignación resuelve la ubicación, analiza la expresión y verifica la regla 13 (`cannot assign boolean to 'x' of type int`); en `if`/`while` verifica la condición y analiza los bloques; en `return` llama a `check_return`; los bloques sueltos abren un nivel. |
+| `check_condition(c, stmt, what)` | Regla 9: la condición de `if` o `while` debe ser `boolean` (`condition of 'if' must be boolean, got int`). Se informa en la posición de la sentencia. |
+| `check_return(c, ret)` | Reglas 6 y 7: en un método `void` el `return` no lleva expresión (`void method 'f' cannot return a value`); en uno con tipo debe llevarla (`method 'g' must return a value of type int`) y su tipo debe ser compatible con el de retorno (`cannot return boolean from method 'h' of type int`). |
 | `analyze_block(c, block, open_level)` | Declara las variables del bloque y analiza sus sentencias. Abre un nivel propio si `open_level` es 1 (bloques anidados); el cuerpo de un método usa 0 porque comparte nivel con los parámetros. |
-| `analyze_method(c, m)` | Inserta el método en el nivel global **antes** de su cuerpo (así puede llamarse a sí mismo), guarda los tipos de sus parámetros con `symtab_set_params`, abre un nivel, declara los parámetros, analiza el cuerpo y cierra el nivel. |
+| `always_returns(s)` | Análisis conservador de flujo: indica si una sentencia nunca termina "normalmente". Un `return` sí; un bloque, si alguna de sus sentencias sí; un `if` con `else`, si lo hacen las dos ramas (sin `else`, no); un `while`, solo si su condición es el literal `true`; cualquier otra, no. |
+| `analyze_method(c, m)` | Inserta el método en el nivel global **antes** de su cuerpo (así puede llamarse a sí mismo), guarda los tipos de sus parámetros con `symtab_set_params`, abre un nivel, declara los parámetros, analiza el cuerpo y cierra el nivel. Si el método tiene tipo y `always_returns` dice que el cuerpo puede terminar sin `return`, informa `method 'f' may reach the end without returning a value` (en la posición del nombre del método, después de los errores del cuerpo). |
 | `check_main(c)` | Regla 3: tiene que existir un método `main` sin parámetros. Los errores son `program has no 'main' method` (en la posición 1:1, porque no hay un lugar donde apuntar), `'main' must be a method` y `'main' must not have parameters`. |
 
