@@ -1,0 +1,2 @@
+int g() { return; }
+void main() { }

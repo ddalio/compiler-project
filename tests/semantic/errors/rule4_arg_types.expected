@@ -1,0 +1,2 @@
+rule4_arg_types.ctds:2:17: semantic error: argument 1 of call to 'f' has type boolean, expected int
+rule4_arg_types.ctds:2:23: semantic error: argument 2 of call to 'f' has type int, expected boolean

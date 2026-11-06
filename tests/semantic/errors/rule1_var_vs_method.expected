@@ -1,0 +1,1 @@
+rule1_var_vs_method.ctds:2:6: semantic error: redeclaration of 'f' (previous declaration at 1:5)

@@ -1,0 +1,1 @@
+rule3_empty_program.ctds:1:1: semantic error: program has no 'main' method

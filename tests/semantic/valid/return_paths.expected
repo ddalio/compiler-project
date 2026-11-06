@@ -1,0 +1,29 @@
+program
+  method_decl a : int
+    param x : int
+    block
+      if
+        binary_expr > : boolean
+          id x : int [param]
+          int_literal 0 : int
+        block
+          return
+            int_literal 1 : int
+        block
+          return
+            int_literal 2 : int
+  method_decl b : int
+    block
+      while
+        bool_literal true : boolean
+        block
+  method_decl c : int
+    block
+      block
+        return
+          int_literal 1 : int
+  method_decl d : void
+    block
+      return
+  method_decl main : void
+    block

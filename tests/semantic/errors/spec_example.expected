@@ -1,0 +1,2 @@
+spec_example.ctds:8:9: semantic error: void method 'main' cannot return a value
+spec_example.ctds:10:9: semantic error: void method 'main' cannot return a value

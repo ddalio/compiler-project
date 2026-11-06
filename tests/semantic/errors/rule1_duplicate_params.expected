@@ -1,0 +1,1 @@
+rule1_duplicate_params.ctds:2:19: semantic error: redeclaration of 'a' (previous declaration at 2:12)

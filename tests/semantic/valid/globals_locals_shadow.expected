@@ -1,0 +1,17 @@
+program
+  var_decl x : int
+  var_decl y : float
+  method_decl main : void
+    block
+      var_decl x : int
+      assign
+        id x : int [variable]
+        int_literal 1 : int
+      assign
+        id y : float [variable]
+        id x : int [variable]
+      block
+        var_decl x : float
+        assign
+          id x : float [variable]
+          float_literal 2.5 : float

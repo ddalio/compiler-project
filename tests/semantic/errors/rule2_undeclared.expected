@@ -1,0 +1,3 @@
+rule2_undeclared.ctds:1:15: semantic error: 'x' undeclared
+rule2_undeclared.ctds:1:22: semantic error: 'y' undeclared
+rule2_undeclared.ctds:1:26: semantic error: 'x' undeclared

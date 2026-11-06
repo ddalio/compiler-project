@@ -1,0 +1,1 @@
+rule14_boolean_not_numeric.ctds:1:24: semantic error: cannot assign boolean to 'f' of type float

@@ -1,0 +1,1 @@
+rule6_missing_value.ctds:1:11: semantic error: method 'g' must return a value of type int

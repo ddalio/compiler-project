@@ -1,0 +1,3 @@
+rule4_arity.ctds:2:15: semantic error: call to 'f' has 1 argument, expected 2
+rule4_arity.ctds:2:21: semantic error: call to 'f' has 3 arguments, expected 2
+rule4_arity.ctds:2:33: semantic error: call to 'f' has 0 arguments, expected 2

@@ -1,0 +1,3 @@
+program
+  method_decl main : void
+    block

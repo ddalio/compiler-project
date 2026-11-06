@@ -1,0 +1,2 @@
+rule9_conditions.ctds:1:15: semantic error: condition of 'if' must be boolean, got int
+rule9_conditions.ctds:1:26: semantic error: condition of 'while' must be boolean, got float

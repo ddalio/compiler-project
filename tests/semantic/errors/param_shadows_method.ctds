@@ -1,0 +1,3 @@
+void f() { }
+void main() { }
+void g(int f) { f(); }

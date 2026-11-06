@@ -1,0 +1,1 @@
+rule2_call_before_declaration.ctds:1:12: semantic error: 'b' undeclared

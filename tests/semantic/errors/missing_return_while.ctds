@@ -1,0 +1,2 @@
+int f(boolean b) { while (b) { return 1; } }
+void main() { }

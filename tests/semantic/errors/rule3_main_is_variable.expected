@@ -1,0 +1,1 @@
+rule3_main_is_variable.ctds:1:5: semantic error: 'main' must be a method

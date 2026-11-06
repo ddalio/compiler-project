@@ -1,0 +1,8 @@
+boolean both(boolean a, boolean b) {
+  return a && b || !a;
+}
+void main() {
+  boolean r;
+  r = both(true, 1 < 2) == false;
+  while (r) { r = !r; }
+}

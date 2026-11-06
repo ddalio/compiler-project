@@ -1,0 +1,1 @@
+rule13_assign_int_to_bool.ctds:1:26: semantic error: cannot assign int to 'b' of type boolean

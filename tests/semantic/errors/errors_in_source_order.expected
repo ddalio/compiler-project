@@ -1,0 +1,2 @@
+errors_in_source_order.ctds:3:3: semantic error: cannot assign boolean to 'g' of type int
+errors_in_source_order.ctds:7:3: semantic error: 'h' undeclared

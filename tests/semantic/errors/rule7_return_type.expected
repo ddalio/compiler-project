@@ -1,0 +1,1 @@
+rule7_return_type.ctds:1:11: semantic error: cannot return boolean from method 'h' of type int

@@ -1,0 +1,2 @@
+call_undeclared_args.ctds:1:15: semantic error: 'foo' undeclared
+call_undeclared_args.ctds:1:22: semantic error: 'z' undeclared

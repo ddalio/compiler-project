@@ -1,0 +1,2 @@
+void f(int a, float b) { }
+void main() { f(1); f(1, 2, 3); f(); }

@@ -1,0 +1,31 @@
+program
+  method_decl half : float
+    param n : int
+    block
+      return
+        binary_expr / : int
+          id n : int [param]
+          int_literal 2 : int
+  method_decl take : void
+    param a : int
+    param b : float
+    block
+  method_decl main : void
+    block
+      var_decl i : int
+      var_decl f : float
+      assign
+        id i : int [variable]
+        float_literal 2.5 : float
+      assign
+        id f : float [variable]
+        binary_expr + : int
+          id i : int [variable]
+          int_literal 1 : int
+      call take : void [method]
+        float_literal 1.5 : float
+        int_literal 2 : int
+      assign
+        id f : float [variable]
+        call half : float [method]
+          int_literal 3 : int

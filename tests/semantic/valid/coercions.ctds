@@ -1,0 +1,12 @@
+float half(int n) {
+  return n / 2;
+}
+void take(int a, float b) { }
+void main() {
+  int i;
+  float f;
+  i = 2.5;
+  f = i + 1;
+  take(1.5, 2);
+  f = half(3);
+}

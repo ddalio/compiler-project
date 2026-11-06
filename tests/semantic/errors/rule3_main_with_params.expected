@@ -1,0 +1,1 @@
+rule3_main_with_params.ctds:1:6: semantic error: 'main' must not have parameters

@@ -1,0 +1,3 @@
+rule12_logical.ctds:1:32: semantic error: operands of '&&' must be boolean, got int and boolean
+rule12_logical.ctds:1:45: semantic error: operand of '!' must be boolean, got int
+rule12_logical.ctds:1:58: semantic error: operands of '||' must be boolean, got boolean and int

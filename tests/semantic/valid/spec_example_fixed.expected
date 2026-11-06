@@ -1,0 +1,25 @@
+program
+  method_decl inc : int
+    param x : int
+    block
+      return
+        binary_expr + : int
+          id x : int [param]
+          int_literal 1 : int
+  method_decl main : int
+    block
+      var_decl y : int
+      assign
+        id y : int [variable]
+        int_literal 4 : int
+      if
+        binary_expr == : boolean
+          id y : int [variable]
+          int_literal 1 : int
+        block
+          return
+            int_literal 1 : int
+        block
+          return
+            call inc : int [method]
+              id y : int [variable]

@@ -1,0 +1,2 @@
+rule3_error_reported_last.ctds:2:12: semantic error: 'y' undeclared
+rule3_error_reported_last.ctds:1:1: semantic error: program has no 'main' method

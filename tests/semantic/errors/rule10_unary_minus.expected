@@ -1,0 +1,1 @@
+rule10_unary_minus.ctds:1:26: semantic error: operand of '-' must be int or float, got boolean

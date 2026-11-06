@@ -1,0 +1,1 @@
+rule10_relational.ctds:1:35: semantic error: operands of '<' must be int or float, got boolean and int

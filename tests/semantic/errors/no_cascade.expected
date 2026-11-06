@@ -1,0 +1,3 @@
+no_cascade.ctds:1:26: semantic error: 'y' undeclared
+no_cascade.ctds:1:37: semantic error: 'y' undeclared
+no_cascade.ctds:1:48: semantic error: 'z' undeclared

@@ -1,0 +1,31 @@
+program
+  method_decl both : boolean
+    param a : boolean
+    param b : boolean
+    block
+      return
+        binary_expr || : boolean
+          binary_expr && : boolean
+            id a : boolean [param]
+            id b : boolean [param]
+          unary_expr ! : boolean
+            id a : boolean [param]
+  method_decl main : void
+    block
+      var_decl r : boolean
+      assign
+        id r : boolean [variable]
+        binary_expr == : boolean
+          call both : boolean [method]
+            bool_literal true : boolean
+            binary_expr < : boolean
+              int_literal 1 : int
+              int_literal 2 : int
+          bool_literal false : boolean
+      while
+        id r : boolean [variable]
+        block
+          assign
+            id r : boolean [variable]
+            unary_expr ! : boolean
+              id r : boolean [variable]

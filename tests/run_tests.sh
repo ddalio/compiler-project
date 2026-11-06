@@ -9,6 +9,15 @@
 #                                    (codigo de salida 0, nada por stdout/stderr)
 #   tests/scanner/errors/*.ctds   -> <caso>.expected = stderr esperado
 #                                    (codigo de salida 1, sin archivo de salida)
+# Etapa 3 (semantico):
+#   tests/semantic/valid/*.ctds   -> <caso>.expected = contenido esperado del .sem
+#                                    (AST anotado; codigo de salida 0)
+#   tests/semantic/errors/*.ctds  -> <caso>.expected = stderr esperado
+#                                    (codigo de salida 1, sin archivo de salida)
+#   tests/unit/test_symtab.c, test_ast.c -> tests unitarios de la tabla de
+#       simbolos, los tipos y el AST (ejecutables que arma `make test` en
+#       $UNIT_DIR; si UNIT_DIR no esta definido se omiten).
+#
 # Etapa 2 (parser):
 #   tests/parser/valid/*.ctds     -> <caso>.expected = contenido esperado del .sint
 #                                    (arbol de parsing; codigo de salida 0)
@@ -123,6 +132,61 @@ for src in "$ROOT"/tests/parser/errors/*.ctds; do
     fi
 done
 
+echo "== Tests unitarios (tabla de simbolos, tipos y AST) =="
+if [ -n "$UNIT_DIR" ]; then
+    for unit in test_symtab test_ast; do
+        if [ ! -x "$UNIT_DIR/$unit" ]; then
+            bad "$unit" "no se encuentra $UNIT_DIR/$unit (correr 'make test')"
+        elif "$UNIT_DIR/$unit" > "$TMP/unit.out" 2>&1; then
+            ok "$unit ($(tail -n 1 "$TMP/unit.out"))"
+        else
+            bad "$unit" "$(cat "$TMP/unit.out")"
+        fi
+    done
+else
+    echo "  (omitidos: los arma y corre 'make test')"
+fi
+
+echo "== Semantico: casos validos =="
+for src in "$ROOT"/tests/semantic/valid/*.ctds; do
+    name="$(basename "$src" .ctds)"
+    expected="${src%.ctds}.expected"
+    rm -f "$TMP/out.sem"
+    run "$(dirname "$src")" -target sem -o "$TMP/out.sem" "$name.ctds"
+    if [ $status -ne 0 ]; then
+        bad "$name" "exit code $status (se esperaba 0): $(cat "$TMP/stderr")"
+    elif [ -s "$TMP/stdout" ] || [ -s "$TMP/stderr" ]; then
+        bad "$name" "sin -debug no debe imprimirse nada"
+    elif ! diff -u "$expected" "$TMP/out.sem" > "$TMP/diff"; then
+        bad "$name" "$(cat "$TMP/diff")"
+    else
+        # Con -debug el mismo AST sale por stdout (la traza va por stderr).
+        run "$(dirname "$src")" -target sem -debug -o "$TMP/out2.sem" "$name.ctds"
+        if [ $status -eq 0 ] && diff -u "$expected" "$TMP/stdout" > "$TMP/diff"; then
+            ok "$name"
+        else
+            bad "$name (-debug)" "exit $status $(cat "$TMP/diff")"
+        fi
+    fi
+done
+
+echo "== Semantico: errores =="
+for src in "$ROOT"/tests/semantic/errors/*.ctds; do
+    name="$(basename "$src" .ctds)"
+    expected="${src%.ctds}.expected"
+    rm -f "$TMP/out.sem"
+    run "$(dirname "$src")" -target sem -o "$TMP/out.sem" "$name.ctds"
+    if [ $status -ne 1 ]; then
+        bad "$name" "exit code $status (se esperaba 1)"
+    elif [ -e "$TMP/out.sem" ]; then
+        bad "$name" "con errores no debe generarse el archivo de salida"
+    elif ! diff -u "$expected" "$TMP/stderr" > "$TMP/diff"; then
+        bad "$name" "$(cat "$TMP/diff")"
+    else
+        ok "$name"
+    fi
+done
+
 echo "== Interfaz de linea de comandos =="
 
 # cli <descripcion> <exit esperado> <texto esperado en stderr> -- <args...>
@@ -201,6 +265,43 @@ if [ $status -eq 2 ] && grep -qF "cannot open" "$TMP/stderr"; then
     ok "archivo inexistente (target por defecto)"
 else
     bad "archivo inexistente (target por defecto)" "exit $status"
+fi
+
+# Etapa sem: el target por defecto genera <fuente>.sem junto al fuente (y no
+# los archivos de las otras etapas).
+cp "$ROOT/tests/semantic/valid/recursion.ctds" "$TMP/default/sem.ctds"
+run "$TMP/default" sem.ctds
+if [ $status -eq 0 ] && [ ! -s "$TMP/stdout" ] && [ ! -s "$TMP/stderr" ] &&
+   diff -q "$ROOT/tests/semantic/valid/recursion.expected" "$TMP/default/sem.sem" > /dev/null &&
+   [ ! -e "$TMP/default/sem.sint" ] && [ ! -e "$TMP/default/sem.lex" ]; then
+    ok "target por defecto: sem.sem"
+else
+    bad "target por defecto: sem.sem" "exit $status; archivos: $(ls "$TMP/default")"
+fi
+
+run "$TMP/default" -target sem -o ast.out sem.ctds
+if [ $status -eq 0 ] && [ -f "$TMP/default/ast.out" ]; then
+    ok "-o <salida> -target sem"
+else
+    bad "-o <salida> -target sem" "exit $status"
+fi
+
+# -debug: el AST por stdout y la traza de la tabla de simbolos por stderr.
+run "$TMP/default" -debug -o debug.out sem.ctds
+if [ $status -eq 0 ] && grep -qF "[symtab] insert fact (method int) at level 1" "$TMP/stderr" &&
+   grep -qF "[symtab] open level 2" "$TMP/stderr" &&
+   diff -q "$ROOT/tests/semantic/valid/recursion.expected" "$TMP/stdout" > /dev/null; then
+    ok "-debug: AST por stdout y traza de la tabla por stderr"
+else
+    bad "-debug: AST por stdout y traza de la tabla por stderr" "exit $status: $(head -n 3 "$TMP/stderr")"
+fi
+
+# Un programa con error semantico compila con -target parse (el parser no lo ve).
+run "$ROOT/tests/semantic/errors" -target parse -o "$TMP/only_parse.sint" rule2_undeclared.ctds
+if [ $status -eq 0 ] && [ -f "$TMP/only_parse.sint" ]; then
+    ok "-target parse no ejecuta el analisis semantico"
+else
+    bad "-target parse no ejecuta el analisis semantico" "exit $status: $(cat "$TMP/stderr")"
 fi
 
 echo

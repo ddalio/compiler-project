@@ -1,0 +1,1 @@
+rule8_assign_undeclared.ctds:1:15: semantic error: 'z' undeclared

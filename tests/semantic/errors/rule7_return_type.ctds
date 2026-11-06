@@ -1,0 +1,2 @@
+int h() { return true; }
+void main() { }

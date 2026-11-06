@@ -1,0 +1,1 @@
+rule1_same_declaration.ctds:1:22: semantic error: redeclaration of 'x' (previous declaration at 1:19)

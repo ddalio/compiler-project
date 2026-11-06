@@ -1,0 +1,1 @@
+rule8_assign_to_method.ctds:2:15: semantic error: 'f' is a method, not a variable

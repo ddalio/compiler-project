@@ -1,0 +1,1 @@
+rule11_equality.ctds:1:32: semantic error: operands of '==' must have the same type, got int and boolean

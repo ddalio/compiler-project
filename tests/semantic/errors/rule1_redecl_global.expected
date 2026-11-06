@@ -1,0 +1,1 @@
+rule1_redecl_global.ctds:2:5: semantic error: redeclaration of 'x' (previous declaration at 1:5)

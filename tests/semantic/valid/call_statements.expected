@@ -1,0 +1,9 @@
+program
+  method_decl f : int
+    block
+      return
+        int_literal 1 : int
+  method_decl main : void
+    block
+      call f : int [method]
+      empty

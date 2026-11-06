@@ -1,0 +1,2 @@
+void f(int a, boolean b) { }
+void main() { f(true, 1); f(2.5, false); }

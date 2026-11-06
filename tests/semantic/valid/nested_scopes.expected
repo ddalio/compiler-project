@@ -1,0 +1,35 @@
+program
+  method_decl f : int
+    block
+      return
+        int_literal 1 : int
+  method_decl g : void
+    param f : int
+    block
+      assign
+        id f : int [param]
+        int_literal 2 : int
+  method_decl main : void
+    block
+      block
+        var_decl a : int
+        assign
+          id a : int [variable]
+          int_literal 1 : int
+      block
+        var_decl a : boolean
+        assign
+          id a : boolean [variable]
+          bool_literal true : boolean
+      if
+        bool_literal true : boolean
+        block
+          var_decl a : int
+          assign
+            id a : int [variable]
+            int_literal 3 : int
+        block
+          var_decl a : float
+          assign
+            id a : float [variable]
+            float_literal 4.5 : float

@@ -1,0 +1,1 @@
+class_method_as_value.ctds:2:26: semantic error: 'f' is a method, not a variable

@@ -1,0 +1,2 @@
+rule10_arithmetic.ctds:1:31: semantic error: operands of '+' must be int or float, got boolean and int
+rule10_arithmetic.ctds:1:42: semantic error: operands of '-' must be int or float, got int and boolean
