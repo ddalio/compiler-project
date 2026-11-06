@@ -2,8 +2,9 @@
  * tree.h - Arbol de parsing de C-TDS (Etapa 2).
  *
  * Es un arbol generico: cada nodo tiene una etiqueta, opcionalmente un texto
- * (el lexema, en las hojas) y una lista de hijos. Lo arma el parser (bison.y)
- * y se escribe en el archivo .sint con tree_print.
+ * (el lexema, en las hojas), una posicion en el fuente y una lista de hijos.
+ * Lo arma el parser (bison.y); se escribe en el archivo .sint con tree_print y
+ * es la entrada de ast_from_tree (ast.h), que lo convierte en el AST.
  */
 #ifndef TREE_H
 #define TREE_H
