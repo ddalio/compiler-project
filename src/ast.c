@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "ast.h"
+#include "symtab.h"
 
 /* ---------------------------------------------------------------- memoria */
 
@@ -349,6 +350,8 @@ static void print_node(FILE *out, const Ast *n, int depth)
         fprintf(out, " %s", n->name);
     if (n->type != TYPE_UNKNOWN)
         fprintf(out, " : %s", type_name(n->type));
+    if ((n->kind == AST_ID || n->kind == AST_CALL) && n->sym)
+        fprintf(out, " [%s]", sym_class_name(n->sym->cls));
     fputc('\n', out);
     print_list(out, n->left, depth + 1);
     print_list(out, n->mid, depth + 1);

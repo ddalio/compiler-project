@@ -104,8 +104,10 @@ const char *ast_kind_name(AstKind kind);
 const char *op_text(OpKind op);
 
 /* Escribe el AST: un nodo por linea con 2 espacios de sangria por nivel.
- * Cada linea es "<nodo> [nombre u operador] [: tipo]"; el tipo se muestra
- * solo si ya se calculo. */
+ * Cada linea es "<nodo> [nombre u operador] [: tipo] [[clase]]": el tipo se
+ * muestra solo si ya se calculo, y la clase del simbolo (variable, param o
+ * method) en los identificadores y llamadas ya vinculados con la tabla de
+ * simbolos. */
 void ast_print(FILE *out, const Ast *root);
 
 /* Libera el nodo, sus hijos y todos los que le siguen en su lista. No libera
