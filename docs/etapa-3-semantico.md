@@ -154,3 +154,45 @@ el mismo nombre en niveles distintos (válido), la misma declaración dos veces 
 a ver el símbolo exterior al cerrar un nivel, símbolos que siguen vivos tras cerrar su nivel y la liberación con un
 nivel todavía abierto. Corre sin errores con AddressSanitizer y UBSan.
 
+### Análisis semántico, parte 1: nombres y alcance (`semantic.h`, `semantic.c`)
+
+Un único recorrido del AST en el orden del fuente (decisión 2), que arma la tabla de símbolos a medida que avanza:
+
+1. Se declaran las variables globales y luego se analiza cada método.
+2. Para cada método: se lo inserta en el nivel global **antes** de su cuerpo (recursión, decisión 6), se guardan los tipos
+   de sus parámetros, se abre un nivel para los parámetros y el cuerpo (que comparten nivel, decisión 4) y se
+   analizan sus sentencias.
+3. Cada bloque anidado (cuerpo de `if` / `while` o bloque suelto) abre y cierra un nivel propio.
+4. Al terminar, se verifica la regla 3 (`main`).
+
+Los mensajes de esta parte (todos con la posición del identificador o de la declaración):
+
+| Regla | Mensaje |
+|-------|---------|
+| 1 | `redeclaration of 'x' (previous declaration at L:C)` |
+| 2 | `'x' undeclared` |
+| 3 | `program has no 'main' method`, `'main' must be a method`, `'main' must not have parameters` |
+| 8 / decisión 18 | `'f' is a method, not a variable`, `'x' is not a method` |
+
+Decisiones y detalles:
+
+- **El análisis no se detiene en el primer error** (decisión 12): tras un error se sigue recorriendo. Un identificador con
+  error recibe `TYPE_ERROR` y no queda vinculado a ningún símbolo; el tipo `error` es el que evitará los errores en
+  cascada cuando se agreguen las reglas de tipos.
+- **Una declaración repetida queda sin símbolo**, pero el método repetido igual se analiza (parámetros y cuerpo), para
+  informar los demás errores que tenga.
+- **Orden de los errores.** Se informan en el orden del recorrido: primero las variables globales y luego cada método
+  en orden. Dentro de un método, en orden del fuente. El error de `main` va al final.
+- **`program has no 'main' method` usa la posición 1:1**, porque no hay ningún lugar del fuente al que apuntar.
+- **`ast_print` muestra la clase del símbolo** de los identificadores y llamadas ya vinculados (`id p : int [param]`,
+  `call f : int [method]`), según la decisión 8.
+- **Los literales ya tienen tipo** (`int`, `float`, `boolean`) y los identificadores y llamadas toman el de su símbolo. La
+  propagación del tipo por las operaciones y las reglas de tipos son la parte siguiente.
+
+Verificación: se probó con un programa temporal (que no se versiona). Un programa válido con globales, parámetros,
+recursión, una variable que oculta a una global y bloques anidados no da errores, y el AST y la tabla quedan como se
+espera (cada identificador vinculado con su símbolo y nivel). Se probaron además 15 programas con errores, uno por
+cada mensaje de la tabla (más casos como declarar dos veces en la misma línea, usar una variable fuera de su bloque,
+un parámetro que oculta a un método y llamar a un método antes de su declaración) y los mensajes y posiciones
+coinciden con los calculados a mano a partir del fuente. Sin errores de memoria con AddressSanitizer y UBSan.
+

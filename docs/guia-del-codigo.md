@@ -33,6 +33,8 @@ Para estudiar el proyecto: qué hace cada archivo y cada función. Describe el c
 | `src/tree.h`, `src/tree.c` | Árbol de parsing: estructura, armado, impresión y liberación. |
 | `src/types.h`, `src/types.c` | Los tipos del lenguaje (`int`, `float`, `boolean`, `void`) y sus nombres. |
 | `src/ast.h`, `src/ast.c` | Árbol Sintáctico Abstracto (AST): estructura, conversión desde el árbol de parsing, impresión y liberación. |
+| `src/symtab.h`, `src/symtab.c` | Tabla de símbolos: pila de niveles con los símbolos (variables, parámetros y métodos) de cada scope. |
+| `src/semantic.h`, `src/semantic.c` | Análisis semántico: recorre el AST con la tabla de símbolos y verifica las reglas de la spec (hoy: nombres y alcance). |
 | `Makefile` | Compila todo y corre los tests. |
 | `tests/run_tests.sh` | Corre todos los casos de test. |
 
@@ -279,7 +281,7 @@ enlazadas con `next`: un hijo que es una secuencia apunta a su primer elemento.
 | `Ast *ast_from_tree(const Node *program)` | Convierte el árbol de parsing (la raíz `program` que deja el parser) en el AST. **Copia** todo lo que necesita, así que después se puede liberar el árbol de parsing. |
 | `const char *ast_kind_name(AstKind)` | Nombre de un nodo para imprimirlo (`"method_decl"`, `"binary_expr"`, ...). |
 | `const char *op_text(OpKind)` | Texto de un operador (`"+"`, `"&&"`, `"!"`, ...). |
-| `void ast_print(FILE *out, const Ast *root)` | Escribe el AST: un nodo por línea con 2 espacios de sangría por nivel. La línea es `<nodo> [nombre u operador] [: tipo]`; el tipo aparece solo si ya se calculó (las declaraciones lo traen desde la construcción). |
+| `void ast_print(FILE *out, const Ast *root)` | Escribe el AST: un nodo por línea con 2 espacios de sangría por nivel. La línea es `<nodo> [nombre u operador] [: tipo] [[clase]]`; el tipo aparece solo si ya se calculó (las declaraciones lo traen desde la construcción) y la clase del símbolo (`variable`, `param`, `method`) en los identificadores y llamadas que el análisis semántico ya vinculó con la tabla. Por ejemplo: `id p : int [param]`. |
 | `void ast_free(Ast *n)` | Libera el nodo, sus hijos y toda la lista de `next`. No libera los símbolos (no son del AST). |
 
 Funciones internas de `ast.c` (todas `static`):
@@ -294,5 +296,79 @@ Funciones internas de `ast.c` (todas `static`):
 | `op_of_leaf(leaf, unary)` | De una hoja de operador (`PLUS`, `MINUS`, ...) al `OpKind`; `unary` distingue el `-` unario del binario. |
 | `named(kind, id)` | Crea un nodo con el nombre y la posición de una hoja. |
 | `convert_expr`, `convert_stmt`, `convert_call`, `convert_block`, `convert_var_decl`, `convert_method` | Convierten cada construcción del árbol de parsing. `convert_var_decl` genera **una `AST_VAR_DECL` por identificador** (`int a, b;` son dos nodos), cada una en la posición de su identificador; así un error de "redeclarado" apunta al nombre. Los paréntesis ya no existen en el árbol de parsing, y `AST_BINARY` toma la posición del operador. |
-| `print_node`, `print_list` | Impresión recursiva: `print_list` imprime una lista de hermanos (`next`) al mismo nivel. |
+| `print_node`, `print_list` | Impresión recursiva: `print_list` imprime una lista de hermanos (`next`) al mismo nivel. `print_node` agrega la clase del símbolo (`[variable]`, `[param]`, `[method]`) si el nodo es un `id` o un `call` con `sym`. |
+
+## 11. `src/symtab.h` y `src/symtab.c`
+
+La **tabla de símbolos** (TS) guarda qué significa cada nombre del programa. Es una **pila de niveles**: cada nivel
+es la lista de símbolos de un scope. El nivel 1 es el global (variables y métodos); al entrar a un método o a un
+bloque se abre un nivel y al salir se cierra. Para resolver un nombre se busca desde el nivel actual hacia el global,
+de modo que un nombre interno **oculta** al externo con el mismo nombre.
+
+`Symbol` es una entrada de la tabla:
+
+| Campo | Qué guarda |
+|-------|------------|
+| `cls` | Clase: `SYM_VARIABLE`, `SYM_PARAM` o `SYM_METHOD`. |
+| `name` | Nombre (copiado). |
+| `type` | Tipo de la variable o parámetro; tipo de retorno en un método. |
+| `line`, `col` | Dónde se declaró (para mensajes como "redeclared, previous declaration at ..."). |
+| `level` | Nivel en el que se declaró (1 = global). |
+| `param_types`, `nparams` | Solo métodos: los tipos de los parámetros formales, en orden (para verificar las llamadas). |
+| `next_in_level`, `next_all` | Enlaces internos: lista de los símbolos del nivel y lista de todos los símbolos. No usarlos desde afuera. |
+
+Internamente, `Level` es un nivel (primer y último símbolo y el nivel que lo contiene) y `SymTab` guarda el nivel
+actual, la cantidad de niveles abiertos, la lista de **todos** los símbolos y el archivo de traza.
+
+| Función | Qué hace |
+|---------|----------|
+| `SymTab *symtab_new(void)` | Crea una tabla con el nivel global ya abierto (profundidad 1). |
+| `void symtab_free(SymTab *tab)` | Libera todos los símbolos (también los de niveles ya cerrados) y los niveles que hayan quedado abiertos. |
+| `void symtab_set_trace(SymTab *tab, FILE *out)` | Si `out` no es `NULL`, cada operación (abrir, cerrar, insertar) escribe una línea `[symtab] ...` ahí. Es la traza de `-debug`. |
+| `void symtab_open_level(SymTab *tab)` | AbrirNivel: apila un nivel nuevo. |
+| `void symtab_close_level(SymTab *tab)` | CerrarNivel: desapila el nivel actual. Sus símbolos **dejan de ser visibles pero siguen existiendo**, porque los nodos del AST los referencian. El nivel global no se puede cerrar (`assert`). |
+| `int symtab_depth(const SymTab *tab)` | Cantidad de niveles abiertos. |
+| `Symbol *symtab_insert(tab, cls, name, type, line, col)` | InsertarSimbolo: agrega el símbolo al nivel actual y lo devuelve. Si ya hay uno con ese nombre **en el nivel actual** no lo agrega y devuelve `NULL`: así la detección de una redeclaración y la inserción son una sola operación. |
+| `void symtab_set_params(Symbol *method, const Type *types, int n)` | Guarda (copiando) los tipos de los parámetros formales de un método. |
+| `Symbol *symtab_lookup_current(tab, name)` | Busca solo en el nivel actual (por ejemplo, para obtener el símbolo anterior al informar una redeclaración). |
+| `Symbol *symtab_lookup(tab, name)` | BuscarSimbolo: busca desde el nivel actual hasta el global y devuelve el primero que encuentra, el más interno. |
+| `const char *sym_class_name(SymClass)` | `"variable"`, `"param"` o `"method"`. |
+| `void symtab_dump(FILE *out, const SymTab *tab)` | Escribe todos los símbolos insertados, en orden de declaración, una línea cada uno: `level 1 method f : int (int, float) @2:5`. |
+
+Funciones internas (`static`): `xmalloc` (con error si no hay memoria), `level_new` (crea un nivel) y
+`find_in_level` (búsqueda lineal de un nombre en la lista de un nivel).
+
+## 12. `src/semantic.h` y `src/semantic.c`
+
+El **análisis semántico** verifica lo que la gramática no puede expresar. Hace un único recorrido del AST **en el orden
+del fuente** y arma la tabla de símbolos a medida que avanza. Como las declaraciones siempre se recorren antes que sus
+usos, un nombre que todavía no está en la tabla es un uso antes de la declaración (regla 2).
+
+Qué niveles abre el recorrido: el global (ya abierto), uno por cada **método** (con sus parámetros y las variables de
+su cuerpo, que comparten nivel) y uno por cada **bloque anidado** (el cuerpo de un `if`/`while` o un bloque suelto).
+
+Esta parte del análisis (nombres y alcance) verifica: la regla 1 (redeclaración), la 2 (uso antes de declarar), la 3
+(`main`) y la 8 (la ubicación de una asignación), más que un método no se use como variable ni una variable como
+método. Las reglas de tipos se agregan en la parte siguiente.
+
+`semantic.h` expone una sola función:
+
+| Función | Qué hace |
+|---------|----------|
+| `int semantic_analyze(Ast *program, const char *filename, SymTab *tab)` | Analiza el programa (la raíz `AST_PROGRAM`). `tab` debe ser una tabla recién creada. Informa cada error por `stderr` (`archivo:línea:col: semantic error: mensaje`), sigue después de cada uno y devuelve la cantidad de errores. Deja en el AST los símbolos (`sym`) y los tipos de identificadores, llamadas y literales. |
+
+Funciones internas de `semantic.c` (todas `static`). `Ctx` agrupa el estado: la tabla, el nombre del archivo y la cantidad
+de errores.
+
+| Función | Qué hace |
+|---------|----------|
+| `sem_error(c, line, col, fmt, ...)` | Cuenta e imprime un error semántico en esa posición. Es variádica como `printf`. |
+| `declare(c, decl, cls)` | Inserta una declaración (variable, parámetro o método) en el nivel actual y guarda el símbolo en `decl->sym`. Si el nombre ya está en ese nivel informa `redeclaration of 'x' (previous declaration at L:C)` (regla 1) y la declaración queda sin símbolo. |
+| `resolve_variable(c, id)` | Resuelve un identificador usado como valor o como ubicación: busca desde el nivel actual al global. Si no existe: `'x' undeclared` (reglas 2 y 8); si es un método: `'x' is a method, not a variable`. Si está bien, `id->sym` es el símbolo y `id->type` su tipo; si no, el tipo es `TYPE_ERROR`. |
+| `resolve_call(c, call)` | Igual para el nombre de una llamada: tiene que existir (`'f' undeclared`) y ser un método (`'x' is not a method`). El tipo de la llamada es el tipo de retorno del método. |
+| `analyze_expr(c, e)` | Recorre una expresión: resuelve identificadores y llamadas (y sus argumentos), da tipo a los literales y baja por las operaciones. |
+| `analyze_stmt(c, s)` | Recorre una sentencia: la ubicación y la expresión de una asignación, la condición y los bloques de `if`/`while`, el valor de `return`, los bloques sueltos. |
+| `analyze_block(c, block, open_level)` | Declara las variables del bloque y analiza sus sentencias. Abre un nivel propio si `open_level` es 1 (bloques anidados); el cuerpo de un método usa 0 porque comparte nivel con los parámetros. |
+| `analyze_method(c, m)` | Inserta el método en el nivel global **antes** de su cuerpo (así puede llamarse a sí mismo), guarda los tipos de sus parámetros con `symtab_set_params`, abre un nivel, declara los parámetros, analiza el cuerpo y cierra el nivel. |
+| `check_main(c)` | Regla 3: tiene que existir un método `main` sin parámetros. Los errores son `program has no 'main' method` (en la posición 1:1, porque no hay un lugar donde apuntar), `'main' must be a method` y `'main' must not have parameters`. |
 
