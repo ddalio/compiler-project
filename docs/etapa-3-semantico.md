@@ -359,3 +359,41 @@ ambos casos fallaron.
 (ya registrado en la decisión 22); por eso se agregó su versión corregida. Los demás `.expected`, calculados a mano,
 coincidieron con la salida del compilador sin necesidad de cambiar el código.
 
+## 6. Problemas conocidos
+
+- **`-target sem` es una extensión.** La cátedra lista los targets `scan`, `parse`, `codinter` y `assembly` pero no uno para
+  el análisis semántico, aunque sí define la extensión de salida `.sem`. Se agregó `sem` y es el target por defecto; conviene
+  confirmarlo con la cátedra (decisión 7).
+- **Interpretaciones de la spec** que, si la cátedra las entiende distinto, se cambian en un solo lugar:
+  - *Coerciones `int`/`float`* (decisión 14): se interpreta que la regla 14 relaja las reglas 4, 7, 11 y 13. Cambiarlo
+    implica modificar `types_compatible` en `types.c`.
+  - *Operador `%`* (decisión 15): acepta `float` porque la regla 10 lo permite, aunque la spec lo describe como el resto
+    entre enteros (se comprobó que `5.5 % 2.0` pasa el análisis).
+  - *`main`* (decisión 16): solo se exige que sea un método sin parámetros; puede tener cualquier tipo de retorno.
+- **El ejemplo de la spec da dos errores semánticos** (decisión 22). Es consecuencia de aplicar la regla 6 tal cual.
+- **`return` en todos los caminos es conservador.** Solo reconoce `while (true)` con el literal `true` como bucle que no
+  termina. Un método con tipo cuyo cuerpo es `while (!false) { return 1; }` o `while (1 < 2) { }` se rechaza con
+  `may reach the end without returning a value`, aunque en la práctica nunca termina (se comprobó con ambos programas).
+  Tampoco se informa código muerto (sentencias después de un `return`).
+- **Posición de algunos errores.** `program has no 'main' method` se informa en 1:1 porque no hay un lugar del fuente al que
+  apuntar. `may reach the end without returning a value` se informa en el nombre del método (el AST no guarda la posición
+  de la llave de cierre) y después de los errores del cuerpo, por lo que ese mensaje puede aparecer fuera del orden del
+  fuente.
+- **El análisis semántico solo corre si no hubo errores léxicos ni sintácticos** (decisión 10). Un programa con errores de
+  varios tipos requiere varias corridas: primero se corrigen los léxicos y sintácticos y recién entonces aparecen los
+  semánticos.
+- **Una declaración repetida de un método** queda sin símbolo; las llamadas siguientes usan la primera declaración. Por
+  ejemplo, con `void f(int a)` y `void f(boolean b)`, `f(1)` se resuelve contra la primera.
+- **Expresiones larguísimas.** El conversor a AST, el análisis, la impresión y la liberación son recursivos, con más
+  profundidad de pila por nivel que las del árbol de parsing. Una suma de 70000 términos (`a + a + ... + a`) se compila
+  bien, pero con 100000 el programa se cae por desborde de la pila de C (segmentation fault, código 139) en el target `sem`;
+  en el target `parse` esa misma entrada funciona (límite de la etapa 2, sección "Problemas conocidos" de
+  `etapa-2-sintactico.md`). Se detectó generando esos programas con un script. No es un problema con programas reales.
+- **Búsqueda lineal en la tabla de símbolos.** Cada nivel es una lista; con muchísimas declaraciones por nivel la
+  búsqueda sería lenta. Una tabla hash por nivel sería la mejora.
+- **No se verifica** lo que la spec no lista como regla: variables usadas sin asignar, división por cero con constantes,
+  desborde en operaciones entre constantes, ni que `main` no se llame a sí mismo.
+- **Heredados de las etapas 1 y 2:** `-2147483648` no se puede escribir como literal; los literales reales solo se validan
+  contra el rango de `double`; los caracteres no ASCII se informan byte por byte; los comentarios de bloque no se anidan; el
+  ejemplo de la spec trae una llave `}` de más; un solo error sintáctico por corrida.
+
