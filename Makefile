@@ -1,7 +1,7 @@
 # Makefile - compilador c-tds (C-TDS, Taller de Diseño de Software)
 #
 #   make          compila el ejecutable ./c-tds
-#   make test     compila y corre todos los tests
+#   make test     compila y corre todos los tests (unitarios y de programas)
 #   make test-asan  corre los tests con sanitizers (memoria)
 #   make clean    borra el ejecutable y los archivos generados
 
@@ -18,6 +18,11 @@ BISON   ?= bison
 OBJS    := $(BUILD)/main.o $(BUILD)/tokens.o $(BUILD)/tree.o \
            $(BUILD)/types.o $(BUILD)/ast.o $(BUILD)/symtab.o $(BUILD)/semantic.o \
            $(BUILD)/lex.yy.o $(BUILD)/bison.tab.o
+
+# Tests unitarios (tests/unit): cada uno es un ejecutable que se arma en $(BUILD).
+# Usan todos los objetos del compilador menos main.o.
+LIBOBJS    := $(filter-out $(BUILD)/main.o,$(OBJS))
+UNIT_TESTS := $(BUILD)/test_symtab $(BUILD)/test_ast
 
 .PHONY: all test test-asan clean
 
@@ -53,8 +58,15 @@ $(BUILD)/%.o: src/%.c src/scanner.h src/parser.h src/tokens.h src/tree.h src/typ
 $(BUILD):
 	mkdir -p $(BUILD)
 
-test: $(TARGET)
-	bash tests/run_tests.sh ./$(TARGET)
+$(BUILD)/test_symtab: tests/unit/test_symtab.c $(BUILD)/symtab.o $(BUILD)/types.o \
+                      src/symtab.h src/types.h | $(BUILD)
+	$(CC) $(CFLAGS) tests/unit/test_symtab.c $(BUILD)/symtab.o $(BUILD)/types.o -o $@
+
+$(BUILD)/test_ast: tests/unit/test_ast.c $(LIBOBJS) | $(BUILD)
+	$(CC) $(CFLAGS) tests/unit/test_ast.c $(LIBOBJS) $(LDLIBS) -o $@
+
+test: $(TARGET) $(UNIT_TESTS)
+	UNIT_DIR=$(BUILD) bash tests/run_tests.sh ./$(TARGET)
 
 # Corre los mismos tests con un ejecutable compilado con AddressSanitizer y
 # UBSan (detectan perdidas de memoria y accesos invalidos). Usa carpetas y
