@@ -168,15 +168,15 @@ else
     bad "-o <salida> -target scan" "exit $status"
 fi
 
-# Etapa parse: el target por defecto genera <fuente>.sint junto al fuente.
+# Etapa parse: -target parse genera <fuente>.sint junto al fuente.
 cp "$ROOT/tests/parser/valid/spec_example.ctds" "$TMP/default/spec.ctds"
-run "$TMP/default" spec.ctds
+run "$TMP/default" -target parse spec.ctds
 if [ $status -eq 0 ] && [ ! -s "$TMP/stdout" ] &&
    diff -q "$ROOT/tests/parser/valid/spec_example.expected" "$TMP/default/spec.sint" > /dev/null &&
    [ ! -e "$TMP/default/spec.lex" ]; then
-    ok "target por defecto: spec.sint"
+    ok "-target parse: spec.sint"
 else
-    bad "target por defecto: spec.sint" "exit $status; archivos: $(ls "$TMP/default")"
+    bad "-target parse: spec.sint" "exit $status; archivos: $(ls "$TMP/default")"
 fi
 
 run "$TMP/default" -target parse -o tree.out spec.ctds
@@ -195,12 +195,12 @@ else
     bad "-target scan no ejecuta el parser" "exit $status: $(cat "$TMP/stderr")"
 fi
 
-# Un archivo inexistente es error de uso tambien con el target por defecto.
+# Un archivo inexistente es error de uso tambien con el target por defecto (sem).
 run "$TMP/default" no_existe.ctds
 if [ $status -eq 2 ] && grep -qF "cannot open" "$TMP/stderr"; then
-    ok "archivo inexistente (target parse)"
+    ok "archivo inexistente (target por defecto)"
 else
-    bad "archivo inexistente (target parse)" "exit $status"
+    bad "archivo inexistente (target por defecto)" "exit $status"
 fi
 
 echo
