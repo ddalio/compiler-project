@@ -212,8 +212,9 @@ archivos.
 | `build/bison.tab.c` | Depende del header (receta vacía) para que bison no corra dos veces. |
 | `build/lex.yy.c` | Corre `flex` sobre `scanner.l`. |
 | `build/*.o` | Compila cada archivo; todos dependen de `bison.tab.h` porque incluyen `tokens.h`. |
-| `make test` | Compila y corre `tests/run_tests.sh`. |
-| `make test-asan` | Corre los mismos tests con un ejecutable compilado con AddressSanitizer y UBSan (detectan pérdidas de memoria y accesos inválidos). |
+| `build/test_symtab`, `build/test_ast` | Ejecutables de los tests unitarios (`tests/unit/`). Usan los objetos del compilador menos `main.o` (la variable `LIBOBJS`). |
+| `make test` | Compila el compilador y los tests unitarios y corre `tests/run_tests.sh` con `UNIT_DIR=build` (el script corre además los unitarios). |
+| `make test-asan` | Corre los mismos tests (también los unitarios) con todo compilado con AddressSanitizer y UBSan (detectan pérdidas de memoria y accesos inválidos). |
 | `make clean` | Borra el ejecutable y las carpetas generadas. |
 
 ## 8. `tests/run_tests.sh`
@@ -235,7 +236,10 @@ Grupos de pruebas:
 | Scanner errores | `tests/scanner/errors/` | Código 1, no se genera salida, `stderr` igual al esperado. |
 | Parser válidos | `tests/parser/valid/` | Código 0, nada por pantalla, `.sint` igual al esperado y mismo árbol por `stdout` con `-debug`. |
 | Parser errores | `tests/parser/errors/` | Código 1, no se genera salida, `stderr` igual al esperado. |
-| Línea de comandos | (en el script) | Errores de uso, nombres de salida por defecto y con `-o`, target por defecto y `-target scan`. |
+| Unitarios | `tests/unit/` | Corre `test_symtab` y `test_ast` (si `UNIT_DIR` está definido, como hace `make test`); cada uno debe terminar con código 0. |
+| Semántico válidos | `tests/semantic/valid/` | Código 0, nada por pantalla, `.sem` (AST anotado) igual al esperado y mismo AST por `stdout` con `-debug`. |
+| Semántico errores | `tests/semantic/errors/` | Código 1, no se genera salida, `stderr` igual al esperado (mensaje y posición exactos). |
+| Línea de comandos | (en el script) | Errores de uso, nombres de salida por defecto y con `-o`, y cada target: el por defecto (`sem`) genera `.sem`, `-target parse` y `-target scan` siguen funcionando, `-debug` muestra el AST y la traza de la tabla, y `-target parse` no corre el análisis semántico. |
 
 ## 9. `src/types.h` y `src/types.c`
 
@@ -390,4 +394,45 @@ de errores y el método que se está analizando (lo necesita `return`).
 | `always_returns(s)` | Análisis conservador de flujo: indica si una sentencia nunca termina "normalmente". Un `return` sí; un bloque, si alguna de sus sentencias sí; un `if` con `else`, si lo hacen las dos ramas (sin `else`, no); un `while`, solo si su condición es el literal `true`; cualquier otra, no. |
 | `analyze_method(c, m)` | Inserta el método en el nivel global **antes** de su cuerpo (así puede llamarse a sí mismo), guarda los tipos de sus parámetros con `symtab_set_params`, abre un nivel, declara los parámetros, analiza el cuerpo y cierra el nivel. Si el método tiene tipo y `always_returns` dice que el cuerpo puede terminar sin `return`, informa `method 'f' may reach the end without returning a value` (en la posición del nombre del método, después de los errores del cuerpo). |
 | `check_main(c)` | Regla 3: tiene que existir un método `main` sin parámetros. Los errores son `program has no 'main' method` (en la posición 1:1, porque no hay un lugar donde apuntar), `'main' must be a method` y `'main' must not have parameters`. |
+
+## 13. `tests/unit/test_symtab.c` y `tests/unit/test_ast.c`
+
+Son programas en C que prueban directamente funciones del compilador, sin pasar por la línea de comandos. Los arma
+`make test` y los corre `tests/run_tests.sh`. Cada uno cuenta sus comprobaciones con la macro `CHECK(cond)` (si no se
+cumple, imprime la línea) y termina con código 1 si alguna falló.
+
+### `test_symtab.c`: tabla de símbolos y tipos
+
+| Función | Qué prueba |
+|---------|------------|
+| `dump_equals(fn, tab, expected)` | Auxiliar: ejecuta `symtab_dump` en memoria (`open_memstream`) y compara con el texto esperado. |
+| `test_new_table` | Una tabla nueva tiene solo el nivel global, no encuentra nada y su volcado es vacío. |
+| `test_insert_and_duplicates` | `symtab_insert` guarda todos los datos del símbolo; un nombre repetido en el mismo nivel se rechaza (`NULL`) sin cambiar el original; variables y métodos comparten el espacio de nombres. |
+| `test_method_params` | Los tipos de los parámetros se **copian** y se pueden redefinir. |
+| `test_levels_and_shadowing` | Niveles anidados: el global se ve desde adentro, un nombre interno oculta al externo (incluso a un método), el mismo nombre en niveles distintos es válido y al cerrar un nivel vuelve a verse el exterior. |
+| `test_symbols_survive_close` | Al cerrar un nivel sus símbolos dejan de verse pero siguen siendo válidos (el AST los referencia). |
+| `test_dump` | El volcado incluye los símbolos de niveles cerrados, en orden de declaración y con la firma de los métodos. |
+| `test_trace` | La traza escribe una línea por operación, no escribe nada por una inserción rechazada y deja de escribir al desactivarla. |
+| `test_free_with_open_levels` | `symtab_free` con niveles abiertos (lo valida AddressSanitizer en `make test-asan`). |
+| `test_types` | `type_name`, `type_is_numeric` y `types_compatible`: iguales, `int`/`float` en los dos sentidos, `boolean` aislado, `void` y `TYPE_ERROR` compatible con todo. |
+
+### `test_ast.c`: AST
+
+`build(src)` parsea un programa desde una cadena con `fmemopen`, lo convierte con `ast_from_tree` y **libera el árbol de
+parsing enseguida**, para comprobar que el AST no depende de él. `at(n, line, col)` compara la posición de un nodo.
+
+| Función | Qué prueba |
+|---------|------------|
+| `test_declarations` | `int a, b;` genera una `var_decl` por identificador, en orden y con la posición de cada uno. |
+| `test_method` | Tipo de retorno, parámetros en orden con su posición y el cuerpo (un `block` con su `return`). |
+| `test_method_without_params` | Un método sin parámetros no tiene lista de parámetros. |
+| `test_if` | `if` con y sin `else`: condición, bloques y posición del `if`; los paréntesis no son un nodo. |
+| `test_other_statements` | `while`, sentencia vacía, bloque suelto y `return` con y sin valor. |
+| `test_operators` | Una operación toma la posición de su operador y el `-` unario (`OP_NEG`) se distingue del binario (`OP_SUB`). |
+| `test_all_operators` | Los diez operadores binarios y el `!` se convierten al `OpKind` correcto. |
+| `test_literals` | Valor y lexema de los literales entero, real y booleano; sin tipo hasta el análisis semántico. |
+| `test_call_arguments` | Los argumentos de una llamada quedan en orden, cada uno con su posición. |
+| `test_block_lists` | Las variables y las sentencias de un bloque van en listas separadas. |
+| `test_print` | Formato exacto de `ast_print`, con y sin tipo calculado. |
+| `test_constructors` | `ast_node`, `ast_leaf`, `ast_kind_name` y `ast_free` (que acepta `NULL`). |
 

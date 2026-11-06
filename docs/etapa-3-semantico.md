@@ -294,3 +294,68 @@ con `-o`, con `-debug` y con los otros targets (`scan`, `parse`, y el rechazo de
 compilador compilado con AddressSanitizer y UBSan sobre todos los programas de prueba de las etapas 1 y 2, con y sin
 `-debug`, sin errores de memoria. Los tests permanentes de esta etapa se agregan en la sección de testing.
 
+## 5. Testing
+
+Los casos están en `tests/semantic/` y `tests/unit/` y los ejecuta `tests/run_tests.sh` (`make test`). Los `.expected`
+están escritos a mano a partir de las reglas de la spec, no copiados de la salida del compilador: los mensajes y
+posiciones de los casos de error se calcularon contando columnas en el fuente antes de correr los tests.
+
+**Tests unitarios (`tests/unit/`).** Programas en C que prueban directamente la tabla de símbolos, los tipos y el
+AST (la explicación de cada función está en `guia-del-codigo.md`, sección 13). `test_symtab` cubre las operaciones de la
+tabla, el ocultamiento entre niveles, la supervivencia de los símbolos tras cerrar un nivel, el volcado y la traza.
+`test_ast` cubre la conversión desde el árbol de parsing: una declaración por identificador, posiciones, listas,
+operadores, valores de literales e impresión; libera el árbol de parsing antes de usar el AST.
+
+**Casos válidos (`tests/semantic/valid/`, el `.expected` es el `.sem`):**
+
+| Caso | Qué cubre |
+|------|-----------|
+| `empty_main` | El programa válido más chico. |
+| `globals_locals_shadow` | Una variable local oculta a una global, un bloque anidado oculta a la local, y `float = int`. |
+| `recursion` | Un método que se llama a sí mismo, parámetros, `return` tras un `if` y llamada como expresión. |
+| `coercions` | `int` ↔ `float` en asignación, `return` y argumentos; tipo de las operaciones mixtas. |
+| `logic_ops` | `&&`, `\|\|`, `!`, `==` entre `boolean`, relacionales y `while`. |
+| `return_paths` | Métodos con tipo que siempre retornan: `if/else` con `return` en ambas ramas, `while (true)`, bloque anidado; y un método `void` con `return;`. |
+| `spec_example_fixed` | El ejemplo de la spec con `main` corregido (`int main`), un `main` que no es `void`. |
+| `nested_scopes` | El mismo nombre en bloques distintos, en las dos ramas de un `if`, y un parámetro que oculta a un método. |
+| `call_statements` | Una llamada de un método con tipo como sentencia (el resultado se ignora) y la sentencia vacía. |
+
+**Casos inválidos (`tests/semantic/errors/`, el `.expected` es el contenido de `stderr`):** hay al menos uno por cada
+regla de la spec.
+
+| Regla | Casos |
+|-------|-------|
+| 1 | `rule1_redecl_global`, `rule1_var_vs_method`, `rule1_duplicate_method`, `rule1_param_vs_body`, `rule1_same_declaration` (`int x, x;`), `rule1_duplicate_params` |
+| 2 | `rule2_undeclared`, `rule2_call_before_declaration`, `rule2_out_of_scope` |
+| 3 | `rule3_no_main`, `rule3_empty_program`, `rule3_main_with_params`, `rule3_main_is_variable`, `rule3_error_reported_last` |
+| 4 | `rule4_arity`, `rule4_arg_types` |
+| 5 | `rule5_void_in_expression` |
+| 6 y 7 | `rule6_void_returns_value`, `rule6_missing_value`, `rule7_return_type` |
+| 8 y clases | `rule8_assign_to_method`, `rule8_assign_undeclared`, `class_method_as_value`, `class_call_variable`, `call_undeclared_args`, `param_shadows_method` |
+| 9 | `rule9_conditions` |
+| 10 | `rule10_arithmetic`, `rule10_relational`, `rule10_unary_minus` |
+| 11 | `rule11_equality` (incluye el caso `int == float`, que **no** es error) |
+| 12 | `rule12_logical` |
+| 13 y 14 | `rule13_assign_bool_to_int`, `rule13_assign_int_to_bool`, `rule14_boolean_not_numeric` |
+| `return` en todos los caminos | `missing_return_if`, `missing_return_while` |
+| Sin cascada y orden | `no_cascade`, `errors_in_source_order` |
+| Corte por errores previos | `skipped_on_syntax_error`, `skipped_on_lexical_error`: el análisis semántico no corre y solo se informa el error léxico o sintáctico |
+| Ejemplo de la spec | `spec_example`: el ejemplo tal cual da los dos errores de la regla 6 (decisión 22) |
+
+Los casos límite incluyen el archivo vacío (falta `main`), el error de `main` que se informa al final aunque ocurra
+antes en el fuente, varios errores en un mismo programa en orden del fuente, y los casos válidos de ocultamiento y de
+mismo nombre en bloques distintos.
+
+**Línea de comandos (en el script):** el target por defecto genera `<fuente>.sem` y no `.sint` ni `.lex`; `-o` con
+`-target sem`; `-debug` muestra el AST por `stdout` y la traza de la tabla por `stderr`; `-target parse` no ejecuta el
+análisis semántico (un programa con error semántico igual genera su `.sint`).
+
+**Regresión y memoria:** los 62 casos de las etapas 1 y 2 siguen pasando. En total `make test` ejecuta 119 casos y
+`make test-asan` los mismos con AddressSanitizer y UBSan, sin errores de memoria. Se comprobó además que los tests
+detectan fallas: al cambiar a propósito una posición en un `.expected` de error y un tipo en un `.expected` válido,
+ambos casos fallaron.
+
+**Hallazgos del testing:** al escribir los casos válidos se vio que el ejemplo de la spec no es semánticamente correcto
+(ya registrado en la decisión 22); por eso se agregó su versión corregida. Los demás `.expected`, calculados a mano,
+coincidieron con la salida del compilador sin necesidad de cambiar el código.
+

@@ -64,7 +64,7 @@ Códigos de salida: `0` correcto, `1` errores en el programa fuente, `2` error d
 ## Tests
 
 ```
-make test                          # compila y corre todos los tests
+make test                          # compila y corre todos los tests (unitarios y de programas)
 make test-asan                     # los mismos tests con sanitizers (detecta errores de memoria)
 bash tests/run_tests.sh ./c-tds    # corre los tests con un ejecutable ya compilado
 ```
@@ -77,5 +77,8 @@ Casos de test (cada `.ctds` tiene un `.expected` con la salida esperada):
 | `tests/scanner/errors/` | errores léxicos | mensajes de `stderr` |
 | `tests/parser/valid/` | programas válidos | contenido del `.sint` (árbol de parsing) |
 | `tests/parser/errors/` | errores léxicos y sintácticos | mensajes de `stderr` |
+| `tests/semantic/valid/` | programas válidos | contenido del `.sem` (AST anotado) |
+| `tests/semantic/errors/` | errores semánticos (uno por regla de la spec, y más) | mensajes de `stderr` |
+| `tests/unit/` | tests unitarios en C de la tabla de símbolos, los tipos y el AST | (se ejecutan; no tienen `.expected`) |
 
-Los tests del scanner usan `-target scan`. Los tests de la interfaz de línea de comandos están en `tests/run_tests.sh`.
+Los tests del scanner usan `-target scan`, los del parser `-target parse` y los semánticos `-target sem`. Los tests de la interfaz de línea de comandos están en `tests/run_tests.sh`. Los tests unitarios los arma y corre `make test` (el script solo los ejecuta si recibe `UNIT_DIR`).
