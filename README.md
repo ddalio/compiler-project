@@ -2,9 +2,9 @@
 
 Taller de Diseño de Software (Cod. 3306) - DC - FCEFQyN - UNRC - 2026
 
-**Estado:** Etapa 2 (análisis sintáctico) en desarrollo. Etapa 1 (léxico) terminada.
+**Estado:** Etapa 3 (análisis semántico) en desarrollo. Etapas 1 (léxico) y 2 (sintáctico) terminadas.
 
-Documentación: [etapa 1](docs/etapa-1-lexico.md), [etapa 2](docs/etapa-2-sintactico.md). Para estudiar el código (qué hace cada archivo y cada función): [guía del código](docs/guia-del-codigo.md).
+Documentación: [etapa 1](docs/etapa-1-lexico.md), [etapa 2](docs/etapa-2-sintactico.md), [etapa 3](docs/etapa-3-semantico.md). Para estudiar el código (qué hace cada archivo y cada función): [guía del código](docs/guia-del-codigo.md).
 
 ## Requisitos
 
@@ -32,7 +32,7 @@ make clean    # borra el ejecutable y la carpeta build/
 | Opción | Acción |
 |--------|--------|
 | `-o <salida>` | nombre del archivo de salida |
-| `-target <etapa>` | etapa hasta la que se compila: `scan` o `parse` (por defecto `parse`, la etapa actual) |
+| `-target <etapa>` | etapa hasta la que se compila: `scan`, `parse` o `sem` (por defecto `sem`, la etapa actual) |
 | `-debug` | imprime información de depuración |
 
 Salida de cada etapa:
@@ -41,20 +41,23 @@ Salida de cada etapa:
 |-------|---------|-----------|
 | `scan` | `<nombre>.lex` | un token por línea: `línea:columna NOMBRE lexema` |
 | `parse` | `<nombre>.sint` | árbol de parsing, un nodo por línea con 2 espacios de sangría por nivel |
+| `sem` | `<nombre>.sem` | AST anotado: un nodo por línea; las expresiones muestran su tipo y los identificadores la clase de símbolo (`id x : int [variable]`) |
 
-Con `-debug` se imprime ese mismo contenido por pantalla; además, en `parse`, la traza del parser sale por `stderr`.
+Con `-debug` se imprime ese mismo contenido por pantalla; además, en `parse` la traza del parser sale por `stderr` y en `sem` la traza de la tabla de símbolos.
 
 Ejemplos:
 
 ```
-./c-tds programa.ctds                  # genera programa.sint
-./c-tds -o arbol.sint programa.ctds    # genera arbol.sint
-./c-tds -target scan programa.ctds     # genera programa.lex
-./c-tds -debug programa.ctds           # además imprime el árbol
+./c-tds programa.ctds                  # análisis completo: genera programa.sem
+./c-tds -o ast.sem programa.ctds       # genera ast.sem
+./c-tds -target parse programa.ctds    # solo hasta el parser: genera programa.sint
+./c-tds -target scan programa.ctds     # solo el scanner: genera programa.lex
+./c-tds -debug programa.ctds           # además imprime el AST anotado
 ```
 
-Sin `-debug`, una compilación exitosa no imprime nada. Los errores léxicos y sintácticos se informan por
-`stderr` como `archivo:línea:columna: ...` y, si los hay, no se genera el archivo de salida.
+Sin `-debug`, una compilación exitosa no imprime nada. Los errores léxicos, sintácticos y semánticos se
+informan por `stderr` como `archivo:línea:columna: ...` y, si los hay, no se genera el archivo de salida. El análisis
+semántico solo corre si el programa no tiene errores léxicos ni sintácticos.
 
 Códigos de salida: `0` correcto, `1` errores en el programa fuente, `2` error de uso o de archivos.
 

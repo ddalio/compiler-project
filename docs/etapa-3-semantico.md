@@ -244,3 +244,53 @@ se espera `int`, `while (true)` sin `return` posterior, `if/else` con `return` e
 coinciden con los calculados a mano. Se comprobó también que los tipos se propagan en el AST (`1 + 2.5` es `float`,
 `f < 3 && true` es `boolean`) y que no hay errores de memoria con AddressSanitizer y UBSan.
 
+## 4. Detalles de implementación
+
+### Integración en el compilador (`main.c`)
+
+El análisis semántico se conecta al resto del compilador en `run_sem`, que sigue estos pasos:
+
+1. **Lectura:** `parse_source` corre el scanner y el parser (es la parte común con el target `parse`).
+2. **Corte por errores previos:** si hubo errores léxicos o sintácticos, el compilador termina con código 1 y **no**
+   corre el análisis semántico (decisión 10).
+3. **AST:** `ast_from_tree` convierte el árbol de parsing en AST, que no depende de él, y el árbol de parsing se libera.
+4. **Análisis:** se crea la tabla de símbolos y `semantic_analyze` recorre el AST; informa todos los errores.
+5. **Salida:** si no hubo errores, el AST anotado se escribe en `<fuente>.sem` (o en el archivo de `-o`). Con errores no se
+   genera archivo y el código de salida es 1.
+6. **Liberación:** se liberan la tabla y el AST.
+
+Con `-debug`, el AST anotado sale por `stdout` y la traza de la tabla de símbolos por `stderr`
+(`[symtab] insert x (variable int) at level 2`). La traza del parser de bison solo se activa con `-target parse`, para no
+mezclar ruido de otra etapa. Sin `-debug`, una compilación exitosa no imprime nada.
+
+### Cambios en las etapas anteriores
+
+- **Target por defecto:** pasó de `parse` a `sem`. `-target scan` y `-target parse` se comportan igual que antes.
+- **Tests:** los casos de las etapas 1 y 2 ya pasaban `-target` explícito, salvo el que probaba el nombre de salida
+  por defecto del parser (`.sint`); ahora usa `-target parse`. Los 62 casos siguen pasando.
+- **`parse_source`:** se extrajo de `run_parse` la lectura con scanner y parser para compartirla con `run_sem`. El
+  comportamiento del target `parse` no cambió.
+- **Ejemplo de la spec:** con el target por defecto da dos errores semánticos (decisión 22). Compilado con `-target parse`
+  sigue generando su `.sint`.
+
+### Formato del `.sem`
+
+Es el AST impreso con `ast_print` (un nodo por línea, 2 espacios de sangría por nivel): las expresiones muestran su tipo
+y los identificadores y llamadas muestran además la clase de símbolo. Por ejemplo, para `y = inc(y);` con `inc` un método
+y `y` una variable:
+
+```
+assign
+  id y : int [variable]
+  call inc : int [method]
+    id y : int [variable]
+```
+
+### Verificación
+
+Se probó el compilador completo con un programa válido (cuyo `.sem` coincide con lo esperado a mano), con el ejemplo de la
+spec (dos errores, sin `.sem`), con un error léxico y con un error sintáctico (en ambos no corre el análisis semántico),
+con `-o`, con `-debug` y con los otros targets (`scan`, `parse`, y el rechazo de `codinter`). Además se corrió el
+compilador compilado con AddressSanitizer y UBSan sobre todos los programas de prueba de las etapas 1 y 2, con y sin
+`-debug`, sin errores de memoria. Los tests permanentes de esta etapa se agregan en la sección de testing.
+
