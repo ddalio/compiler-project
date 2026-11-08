@@ -77,6 +77,8 @@ Instrucciones y su texto en el archivo `.ci`:
 | 18 | Intérprete **(extensión)** | La calificación de la cátedra incluye un intérprete y la teoría habla de **interpretación iterativa sobre código intermedio**: se implementa un intérprete del código de tres direcciones, que además permite verificar los programas ejecutándolos. La cátedra no define cómo se lo invoca; se agrega la opción **`-run`**, válida solo con `-target codinter`: después de generar el código, lo ejecuta desde `main`. Conviene confirmarlo con la cátedra. |
 | 19 | Entrada y salida | La gramática de C-TDS **no tiene sentencias de entrada ni de salida**. El tutorial de assembly de la cátedra muestra un programa con `extern int get_int();` y `extern void printInt(int x);`, pero las declaraciones `extern` no están en la gramática de la spec y este compilador no las acepta (el analizador sintáctico las rechaza). Por eso el único resultado observable de un programa es el **valor que devuelve `main`**: con `-run`, si `main` devuelve un valor (por ejemplo, `int main()`), se imprime en una línea por `stdout`; si `main` es `void` no se imprime nada. Si más adelante la cátedra confirmara las funciones externas, habría que agregarlas a la gramática y al intérprete. |
 | 20 | Errores de ejecución | Si un programa divide o calcula el resto por cero, el intérprete informa `runtime error: division by zero` por `stderr` y termina con código de salida 1. Es el único error posible en tiempo de ejecución de un programa que pasó el análisis semántico (no hay punteros, arreglos ni entrada de datos). |
+| 21 | Enteros del intérprete | Los enteros son de **32 bits con signo** (lo dice la spec) y las operaciones **dan la vuelta** al desbordar, como en la máquina: `2147483647 + 1` vale `-2147483648`. Se hace con aritmética sin signo para no caer en el comportamiento indefinido de C. `INT_MIN / -1` vale `INT_MIN` y `INT_MIN % -1` vale 0. |
+| 22 | Recursión del intérprete | El intérprete es iterativo y lleva su propia pila de llamadas, no usa la de C. La profundidad máxima es de **100000** llamadas anidadas; superarla (por ejemplo, una recursión infinita) es el error de ejecución `runtime error: call stack overflow`, con código de salida 1. Una recursión legítima de decenas de miles de niveles funciona. |
 
 Ejemplo completo del formato (decisiones 6 a 16). El programa:
 
@@ -251,4 +253,38 @@ genera código), con `scan`, `parse` y `sem`, y con `assembly` (rechazado). Adem
 AddressSanitizer y UBSan sobre todos los programas de prueba de las etapas 1 a 3, con y sin `-debug`: sin errores de memoria,
 lo que confirma que la tabla de símbolos se libera después de usar el AST. Los tests permanentes se agregan en la sección
 de testing.
+
+### Intérprete (`interp.h`, `interp.c`) y opción `-run`
+
+Implementa las decisiones 18 a 22. Es una **interpretación iterativa** sobre el código intermedio, la que describe la teoría
+(frente a la interpretación recursiva sobre el AST): mejor verificación de errores y más eficiente.
+
+- **Pila de marcos propia.** En vez de que `exec` se llame a sí misma por cada llamada del programa, el intérprete tiene un
+  bucle y una pila de marcos en el heap. Un `call` apila un marco con los argumentos y un `ret` lo desapila y deja el
+  valor en el resultado del `call` pendiente del marco de abajo. Así la recursión del programa interpretado no desborda la
+  pila de C y el límite es una decisión explícita (decisión 22).
+- **Pila de argumentos.** Los `param` apilan valores y el `call` consume los `n` últimos. Como el generador emite todos los
+  `param` de una llamada seguidos antes del `call` (decisión 10), los argumentos de llamadas anidadas nunca se mezclan.
+- **Cada variable se ubica sin buscarla por nombre.** `IrVar` guarda `is_param` e `index` (se agregaron para esto), y los
+  temporales se numeran desde 1, así que la posición de un operando en el marco es un cálculo directo.
+- **Las etiquetas se resuelven una sola vez** al preparar los métodos (`label_pos`), de modo que un salto es una asignación.
+- **Todo empieza en 0**: los slots de cada marco y las globales (decisiones 13 y 14).
+- **`-run`** es válido solo con `-target codinter`; con otro target el compilador informa `option '-run' requires -target
+  codinter` y termina con código 2. El código se genera y se escribe en el `.ci` como siempre, y después se ejecuta. Si
+  `main` devuelve un valor, se imprime en una línea por `stdout` (un `boolean` sale como 1 o 0). Un error de ejecución sale
+  por `stderr` y el compilador termina con código 1. Con `-debug`, el código intermedio se imprime antes del resultado.
+- **No hay límite de instrucciones**: un programa con un bucle infinito no termina, igual que en cualquier otro intérprete.
+
+### Verificación del intérprete
+
+Se ejecutaron 21 programas con `-run` y se compararon con el resultado calculado a mano: factorial de 10 (3628800), Fibonacci
+de 20 (6765), suma 1..100 (5050), máximo común divisor, recursión de 50000 niveles (1250025000), `-7 / 2 * 100 + -7 % 2`
+(-301, división y resto truncados hacia cero), `2147483647 + 1` (-2147483648), `INT_MIN / -1` y `INT_MIN % -1`, globales y locales
+inicializadas en 0, un `boolean main`, un `void main` (no imprime nada) y llamadas con argumentos anidados. Dos casos
+verifican la semántica del **cortocircuito** (`false && inc()` y `true || inc()` no llaman a `inc`; las otras dos
+combinaciones sí) y otros dos verifican el **orden de evaluación** de la decisión 9 (`g + h()` y `two(g, h())`, donde `h`
+modifica `g`, dan el resultado de leer `g` antes de la llamada). La división y el resto por cero informan `runtime error:
+division by zero` con código 1, y una recursión infinita informa `runtime error: call stack overflow`. Además se comprobó
+que `-run` con otro target, con un error semántico y con un programa con `float` se comporta como corresponde. Sin errores
+de memoria con AddressSanitizer y UBSan. Los tests permanentes se agregan en la sección de testing.
 

@@ -34,6 +34,7 @@ make clean    # borra el ejecutable y la carpeta build/
 | `-o <salida>` | nombre del archivo de salida |
 | `-target <etapa>` | etapa hasta la que se compila: `scan`, `parse`, `sem` o `codinter` (por defecto `codinter`, la etapa actual) |
 | `-debug` | imprime información de depuración |
+| `-run` | con `-target codinter`: ejecuta el código intermedio generado desde `main` y, si `main` devuelve un valor, lo imprime |
 
 Salida de cada etapa:
 
@@ -46,6 +47,8 @@ Salida de cada etapa:
 
 Con `-debug` se imprime ese mismo contenido por pantalla; además, en `parse` la traza del parser sale por `stderr` y en `sem` la traza de la tabla de símbolos.
 
+`-run` ejecuta con enteros de 32 bits (que dan la vuelta al desbordar); una división por cero es un error de ejecución (código de salida 1). El lenguaje no tiene entrada ni salida, así que el único resultado de un programa es el valor que devuelve `main`.
+
 El código intermedio no soporta números reales: un programa con `float` es válido para `-target sem` pero se rechaza con `codegen error` al generar código.
 
 Ejemplos:
@@ -53,6 +56,7 @@ Ejemplos:
 ```
 ./c-tds programa.ctds                  # compilación hasta código intermedio: genera programa.ci
 ./c-tds -o codigo.ci programa.ctds     # genera codigo.ci
+./c-tds -run programa.ctds             # genera programa.ci, lo ejecuta e imprime lo que devuelve main
 ./c-tds -target sem programa.ctds      # solo hasta el análisis semántico: genera programa.sem
 ./c-tds -target parse programa.ctds    # solo hasta el parser: genera programa.sint
 ./c-tds -target scan programa.ctds     # solo el scanner: genera programa.lex

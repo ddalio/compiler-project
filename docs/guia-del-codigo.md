@@ -21,6 +21,7 @@ Para estudiar el proyecto: qué hace cada archivo y cada función. Describe el c
   Etapa 3: árbol de parsing ──► ast.c: ast_from_tree() ──► AST
            semantic.c: semantic_analyze(AST, tabla de símbolos) ──► main.c: run_sem() ──► archivo.sem  (target sem)
   Etapa 4: AST anotado + tabla de símbolos ──► irgen.c: irgen_generate() ──► ir.c: ir_print() ──► archivo.ci  (target codinter)
+           con -run: interp.c: interp_run() ejecuta el código intermedio desde main
 ```
 
 | Archivo | Para qué sirve |
@@ -38,6 +39,7 @@ Para estudiar el proyecto: qué hace cada archivo y cada función. Describe el c
 | `src/semantic.h`, `src/semantic.c` | Análisis semántico: recorre el AST con la tabla de símbolos y verifica las reglas de la spec (hoy: nombres y alcance). |
 | `src/ir.h`, `src/ir.c` | Código intermedio (código de tres direcciones): operandos, instrucciones, métodos, impresión y liberación. |
 | `src/irgen.h`, `src/irgen.c` | Generador de código intermedio: recorre el AST anotado y produce el código de tres direcciones. |
+| `src/interp.h`, `src/interp.c` | Intérprete del código intermedio: ejecuta el programa desde `main` (opción `-run`). |
 | `Makefile` | Compila todo y corre los tests. |
 | `tests/run_tests.sh` | Corre todos los casos de test. |
 
@@ -193,7 +195,7 @@ memoria), `parse_root`, `yyerror` y, vía `bison.tab.h`, `yydebug`.
 | `static void usage(FILE *out)` | Imprime la ayuda de uso. |
 | `static int has_extension(const char *name, const char *ext)` | Indica si `name` termina en `ext` y tiene algo antes (por eso `.ctds` solo no vale). |
 | `static int check_target(const char *target)` | Acepta `scan`, `parse`, `sem` y `codinter`; para `assembly` informa "not available yet" y para cualquier otro "unknown target". (`sem` es el análisis semántico: la cátedra lo ejecuta como parte de la compilación y le asigna la extensión `.sem`, pero no lo lista entre los targets.) |
-| `static int parse_args(int argc, char **argv, Options *opt)` | Recorre los argumentos y completa `Options`: `-o` y `-target` toman el argumento siguiente, `-debug` es una bandera y cualquier otro argumento que empiece con `-` es una opción desconocida (por eso un archivo no puede empezar con `-`). Valida que haya un solo archivo de entrada, que termine en `.ctds` y que el target sea válido. El target por defecto es `codinter`, la etapa actual. |
+| `static int parse_args(int argc, char **argv, Options *opt)` | Recorre los argumentos y completa `Options`: `-o` y `-target` toman el argumento siguiente, `-debug` y `-run` son banderas y cualquier otro argumento que empiece con `-` es una opción desconocida (por eso un archivo no puede empezar con `-`). Valida que haya un solo archivo de entrada, que termine en `.ctds`, que el target sea válido y que `-run` solo se use con `-target codinter`. El target por defecto es `codinter`, la etapa actual. |
 | `static char *output_path(const Options *opt, const char *stage_ext)` | Calcula el archivo de salida: el de `-o` si se dio; si no, el del fuente cambiando `.ctds` por la extensión de la etapa (`.lex`, `.sint`). Devuelve memoria que hay que liberar con `free`. |
 | `static FILE *open_input(const Options *opt)` | Abre el fuente; si falla informa el motivo. |
 | `static int write_failed(const char *path)` | Informa que no se pudo escribir la salida y devuelve el código 2. |
@@ -205,7 +207,8 @@ memoria), `parse_root`, `yyerror` y, vía `bison.tab.h`, `yydebug`.
 | `static int write_output(opt, stage_ext, print, what)` | Abre el archivo de salida (el de `-o` o el del fuente con la extensión de la etapa), escribe ahí lo que produce la función `print` y lo cierra, informando si no se pudo. Lo usan `run_sem` y `run_codinter`. |
 | `print_ast_cb`, `print_ir_cb` | Adaptan `ast_print` e `ir_print` a la firma que espera `write_output`. |
 | `static int run_sem(const Options *opt)` | Etapa sem: corre el front end y, si no hubo errores semánticos, escribe el AST anotado en el `.sem`. Con `-debug` imprime el AST por `stdout` y la traza de la tabla por `stderr`. |
-| `static int run_codinter(const Options *opt)` | Etapa codinter: corre el front end y, solo si no hubo ningún error, llama a `irgen_generate` (que devuelve `NULL` si el programa usa `float`) y escribe el código de tres direcciones en el `.ci`. Con `-debug` lo imprime también por `stdout`. La tabla de símbolos y el AST se liberan recién **después** de generar el código. |
+| `static int run_program(const IrProgram *prog)` | `-run`: llama a `interp_run`; si hubo un error de ejecución (ya informado) devuelve el código 1; si `main` devolvió un valor, lo imprime en una línea por `stdout` (un `boolean` sale como 1 o 0). |
+| `static int run_codinter(const Options *opt)` | Etapa codinter: corre el front end y, solo si no hubo ningún error, llama a `irgen_generate` (que devuelve `NULL` si el programa usa `float`) y escribe el código de tres direcciones en el `.ci`. Con `-debug` lo imprime también por `stdout`. Con `-run` (y sin errores al escribir) ejecuta el programa con `run_program`. La tabla de símbolos y el AST se liberan recién **después** de generar el código. |
 | `int main(int argc, char **argv)` | Interpreta los argumentos y llama a `run_scan`, `run_parse`, `run_sem` o `run_codinter` según el target. |
 
 Códigos de salida: 0 correcto, 1 errores en el programa fuente (léxicos o sintácticos), 2 error de uso o de
@@ -457,8 +460,11 @@ decisiones y el formato de texto están en `etapa-4-codigo-intermedio.md`.
 un método, solo en las llamadas). `value` guarda la constante o el número del temporal o de la etiqueta; `var`, la variable;
 `name`, el nombre del método.
 
-**Variables.** `IrVar` tiene `name` y `is_global`; las globales se imprimen con prefijo `@` (`@g`) para no confundirlas con
-una local del mismo nombre.
+**Variables.** `IrVar` tiene `name`, `is_global` (las globales se imprimen con prefijo `@`, como `@g`, para no confundirlas con
+una local del mismo nombre), `is_param` (es un parámetro de su método; si no es global ni parámetro, es una local) e `index`
+(su posición dentro de su lista: de las globales del programa, de los parámetros del método o de sus locales; empieza en 0).
+`ir_add_global`, `ir_add_param` e `ir_add_local` asignan `is_param` e `index`. Los usa el intérprete para ubicar cada variable
+sin buscarla por nombre.
 
 **Instrucciones.** `Instr` tiene `op` (un `IrOp`), `a`, `b` y `result`. Qué campos usa cada operación:
 
@@ -557,4 +563,46 @@ del `.ci`):
 | `if (c) A else B` | `c`; crear `Lelse` y `Lfin`; `jz c, Lelse`; `A`; `jmp Lfin`; `Lelse:`; `B`; `Lfin:` |
 | `while (c) A` | crear `Linicio` y `Lfin`; `Linicio:`; `c`; `jz c, Lfin`; `A`; `jmp Linicio`; `Lfin:` |
 | `return e` / `return` | `e`; `ret e` / `ret` |
+
+## 16. `src/interp.h` y `src/interp.c`
+
+El **intérprete** ejecuta un programa en código de tres direcciones (`ir.h`) empezando por el método `main`. Es una
+interpretación **iterativa**, la que describe la teoría para el código intermedio: un bucle que ejecuta una instrucción por
+vez sobre una **pila de marcos propia**, sin recursión de C. Por eso la recursión del programa interpretado no desborda la
+pila del intérprete: el límite lo pone `INTERP_MAX_DEPTH` (100000 llamadas anidadas), y superarlo es un error de ejecución.
+Se activa con `-run` y sirve para verificar el código generado ejecutándolo.
+
+Semántica: los enteros son de **32 bits con signo y dan la vuelta** al desbordar (como en la máquina); las variables globales
+y locales empiezan en 0; la división y el resto por cero son un error de ejecución; el resultado del programa es el valor
+que devuelve `main`.
+
+Estructuras (en `interp.c`):
+
+| Estructura | Qué guarda |
+|------------|------------|
+| `FuncInfo` | Un método listo para ejecutar: el `IrFunc` y la posición de cada etiqueta dentro de su código (`label_pos`), calculada una sola vez. |
+| `Frame` | El marco de una llamada: el método, el contador de programa `pc`, los valores de parámetros, locales y temporales (`slots`) y, si está esperando que vuelva una llamada, la instrucción `call` pendiente (`call`). |
+| `Interp` | El estado: los métodos, las globales, la pila de marcos y la pila de argumentos (los `param` ya emitidos que todavía no consumió un `call`). |
+
+`interp.h` expone una sola función:
+
+| Función | Qué hace |
+|---------|----------|
+| `int interp_run(const IrProgram *prog, int *has_value, int *value)` | Ejecuta el programa desde `main`. Devuelve 0 si terminó bien; entonces `*has_value` indica si `main` devolvió un valor y `*value` es ese valor (un `boolean` como 1 o 0). Devuelve 1 si hubo un error de ejecución (`runtime error: division by zero` o `runtime error: call stack overflow`), que informa por `stderr`. |
+
+Funciones internas de `interp.c` (todas `static`):
+
+| Función | Qué hace |
+|---------|----------|
+| `xcalloc`, `xrealloc` | Reservan memoria; si no hay informan y terminan con código 2. |
+| `build_funcs(in)` | Arma la tabla de métodos y, para cada uno, la posición de cada etiqueta (recorre su código buscando `IR_LABEL`). |
+| `find_func(in, name)` | Busca un método por nombre. |
+| `slot_of(info, o)` | Posición de un operando en los `slots` del marco: primero los parámetros, después las locales y al final los temporales (`t1` es el primero de ellos). |
+| `read_operand(in, fr, o)`, `write_operand(in, fr, o, value)` | Leen y escriben un operando: una constante, una global (en `in->globals`) o un slot del marco. |
+| `wrap_add`, `wrap_sub`, `wrap_mul`, `wrap_neg` | Aritmética de 32 bits que da la vuelta, hecha con enteros sin signo para evitar el comportamiento indefinido de C en el desborde. |
+| `push_frame(in, info, n)` | Apila el marco de una llamada: reserva los slots en 0 y copia en los parámetros los `n` últimos argumentos de la pila de argumentos. |
+| `pop_frame(in)` | Desapila un marco y libera sus slots. |
+| `runtime_error(msg)` | Informa `runtime error: msg` y devuelve 1. |
+| `execute(in, main_info, has_value, value)` | El bucle principal: toma la instrucción siguiente del marco actual y la ejecuta. `jmp`, `jz` y `jnz` cambian el `pc` a la posición de la etiqueta; `param` apila un argumento; `call` apila un marco nuevo (controlando la profundidad); `ret` desapila el marco y, si hay un marco que espera, le guarda el valor devuelto en el resultado de su `call`; cuando termina `main` deja su valor en el resultado. La división y el resto por cero informan el error; `INT_MIN / -1` da `INT_MIN` y `INT_MIN % -1` da 0. |
+| `interp_run` (pública) | Prepara el estado, busca `main`, llama a `execute` y libera todo (también los marcos que queden tras un error). |
 
