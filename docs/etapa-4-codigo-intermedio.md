@@ -381,12 +381,14 @@ programas (`names_like_temporaries` en `valid/` y en `run/`). El caso del `ret` 
   genera un temporal y una copia (`t4 = a + b` y después `x = t4`), los temporales no se reutilizan (un método con muchas
   operaciones tiene muchos temporales y, en la etapa siguiente, un marco de pila grande), se genera el código que está
   después de un `return` y un método `void` que termina con `return;` tiene dos `ret` seguidos.
-- **Las variables locales sin inicializar valen 0 solo en el intérprete.** La spec no define su valor inicial; el
-  intérprete las pone en 0 para que la ejecución sea determinista, pero el código objeto de la etapa siguiente no tiene por
-  qué hacerlo. Un programa que dependa de leer una local sin asignar se comportaría distinto al compilarlo.
+- **Las variables locales sin inicializar valen 0.** La spec no define su valor inicial; el intérprete las pone en 0 para que la
+  ejecución sea determinista. _(Actualización etapa 5: el código nativo también las inicializa en 0 en el prólogo de cada método
+  (decisión 9 de la etapa 5), así que el intérprete y los ejecutables se comportan igual; un programa de C equivalente, en
+  cambio, tendría valores indefinidos.)_
 - **Un método puede llamarse como un temporal.** Las variables que se parecen a un temporal o a una etiqueta se renombran,
   pero un método llamado `t1` no puede renombrarse (su nombre es el que verá el ensamblador) y el `.ci` muestra
-  `t1 = call t1, 0`. No es ambiguo para el programa, que distingue el operando de `call`, pero es confuso de leer.
+  `t1 = call t1, 0`. No es ambiguo para el programa, que distingue el operando de `call`, pero es confuso de leer. _(En el assembly
+  no hay confusión: el método se llama `ctds_t1`.)_
 - **La protección del orden de evaluación solo cubre variables globales** (decisión 9). Es suficiente porque los parámetros se
   pasan por valor y no hay punteros ni asignaciones dentro de expresiones, pero deja de valer si el lenguaje se amplía con
   alguno de ellos.

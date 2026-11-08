@@ -73,7 +73,7 @@ Sin `-debug`, una compilación exitosa no imprime nada. Los errores léxicos, si
 informan por `stderr` como `archivo:línea:columna: ...` y, si los hay, no se genera el archivo de salida. El análisis
 semántico solo corre si el programa no tiene errores léxicos ni sintácticos.
 
-Códigos de salida: `0` correcto, `1` errores en el programa fuente, `2` error de uso, de archivos o de herramientas (por ejemplo, no se pudo ejecutar `gcc`).
+Códigos de salida: `0` correcto, `1` errores en el programa fuente, `2` error de uso, de archivos o de herramientas (por ejemplo, no se pudo ejecutar `gcc`). `-o` no puede apuntar al propio archivo fuente.
 
 ## Tests
 

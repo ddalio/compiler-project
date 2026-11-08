@@ -26,6 +26,7 @@ más de 6 argumentos, la división con negativos, el resultado de `INT_MIN / -1`
 | 3 | Qué hace el compilador **sin `-target`** | La cátedra dice que el comportamiento por defecto es realizar la compilación completa y generar el ejecutable `nombreArchivo.out`, y que `-target` detiene la compilación en una etapa. Por eso, **sin `-target`, el compilador genera el ejecutable** (`<fuente>.out`, o el archivo de `-o`): corre todo el front end, genera el código intermedio, el assembly y lo ensambla y enlaza. El assembly no se guarda. `-target assembly` se detiene antes y escribe el **`.ass`** (en el archivo de `-o`, si se lo da). Los demás targets (`scan`, `parse`, `sem`, `codinter`) siguen funcionando igual. Hasta la etapa 4 el target por defecto era `codinter`; esto lo cambia (los tests que lo usaban pasan a indicar `-target codinter`). |
 | 4 | `-o`, `-debug` y `-run` | `-o` nombra el **ejecutable** (como dice la cátedra: "renombra el archivo ejecutable") o, con `-target assembly`, el `.ass`. Con `-debug` el assembly también sale por `stdout`. `-run` ejecuta el código intermedio con el intérprete: **implica `-target codinter`** (como sin `-target` ahora se genera el ejecutable, `c-tds -run programa.ctds` seguiría pidiendo el intérprete en vez de compilar) y sigue sin poder combinarse con otro target. |
 | 5 | Errores | Un programa con errores léxicos, sintácticos, semánticos o de generación (por ejemplo, un `float`) no genera ni `.ass` ni ejecutable, y termina con código 1. Un programa correcto genera siempre assembly válido: si `gcc` lo rechazara, es un error del compilador y se informa como error de herramientas (código 2). |
+| 23 | `-o` y el archivo fuente | Si `-o` apunta al **propio archivo fuente** (con el mismo nombre o con otro nombre del mismo archivo, por ejemplo un enlace simbólico), el compilador lo rechaza (`output file '...' would overwrite the input file`, código 2) antes de hacer nada. Con `-o` el ejecutable o el archivo de la etapa se escribe donde se indique, y sin esta comprobación `c-tds -o programa.ctds programa.ctds` reemplazaba el fuente por el ejecutable. Se detectó al preparar los problemas conocidos de esta etapa y afectaba a todos los targets. |
 
 ### Modelo de ejecución
 
@@ -266,12 +267,12 @@ están en `guia-del-codigo.md`, sección 19.
   global modificada por un método; globales como argumentos; variables con el mismo nombre en bloques distintos; llamadas encadenadas; y
   el desborde de 32 bits.
 - **División y resto por cero:** el ejecutable termina con la señal `SIGFPE` y el código de salida es **136** (decisión 19).
-- **Un programa grande**, generado por el script (3000 sentencias, más de 1 MB de assembly): como no entra de una vez en la tubería
+- **Un programa grande**, generado por el script (3000 sentencias, unos 600 KB de assembly: 21017 líneas): como no entra de una vez en la tubería
   que lee `gcc`, comprueba que el compilador escribe todo el assembly; el ejecutable debe salir con 3000 módulo 256 = 184.
 
 **Errores de herramientas.** Se simulan con un `PATH` modificado: sin `gcc` el compilador informa `cannot run 'gcc'` y sale con código 2
 sin dejar un ejecutable; con un `gcc` falso que siempre falla informa `gcc failed` con código 2; y con un `gcc` falso que termina **sin leer**
-el assembly de más de 1 MB comprueba que escribir en la tubería no mata al compilador con `SIGPIPE` (código 141) sino que informa el
+el assembly de unos 600 KB (la tubería guarda 64 KB) comprueba que escribir en la tubería no mata al compilador con `SIGPIPE` (código 141) sino que informa el
 error y sale con código 2. Además, `-target assembly` funciona sin `gcc`.
 
 **Línea de comandos:** `-target assembly` genera el `.ass` y no el ejecutable; `-o` con `-target assembly`; sin `-target` se genera el
@@ -283,6 +284,39 @@ instrucción de la multiplicación por una suma en el generador, y un código de
 el caso `loop`, y los programas nativos que multiplican; al restaurar todo volvieron a pasar.
 
 **Hallazgos del testing:** los `.expected` de assembly calculados a mano coincidieron con el generador sin cambios, y los 52 programas
-nativos dieron el resultado esperado. El único defecto encontrado fue un error del propio test unitario (verificaba que no hubiera `pushq`
+nativos dieron el resultado esperado. Al preparar los problemas conocidos se encontró un defecto de la línea de comandos que afectaba a
+todos los targets: `-o` podía apuntar al propio fuente y reemplazarlo (decisión 23); se corrigió y se agregó un test. El único defecto encontrado fue un error del propio test unitario (verificaba que no hubiera `pushq`
 en una llamada de 6 argumentos, pero el prólogo tiene `pushq %rbp`), corregido en el test.
+
+## 6. Problemas conocidos
+
+- **Solo Linux x86-64 con `gcc`.** El assembly es de Linux (sintaxis AT&T de GNU, `%rip`, `.note.GNU-stack`) y el ejecutable se arma con
+  `gcc`, que tiene que estar en el `PATH`; no hay una opción para elegir otra herramienta. En macOS o Windows solo sirve
+  `-target assembly`, que no necesita `gcc`. Cualquier error de `gcc` se informa como `gcc failed to assemble and link the program` (sus
+  propios mensajes salen por `stderr` tal cual), y un nombre de salida que `gcc` no pueda escribir produce ese mismo error.
+- **El único resultado observable es de 8 bits.** El sistema operativo conserva solo el byte bajo del valor que devuelve `main`: un
+  resultado de 1000 sale como 232. Por eso los tests comparan módulo 256 y no se puede distinguir, por ejemplo, 5 de 261.
+- **División por cero.** El ejecutable termina con `SIGFPE` (código de salida 136) en vez de informar un error como el intérprete
+  (decisión 19). Es la única diferencia de comportamiento con el intérprete en programas sin recursión profunda.
+- **Recursión profunda.** El ejecutable usa la pila del sistema (8 MB por defecto) y el código sin optimizar gasta mucha: cada llamada
+  ocupa su marco completo más 16 bytes. Con un método recursivo de 5 posiciones por marco (64 bytes por nivel), 100000 niveles
+  funcionan y 150000 terminan con `SIGSEGV` (código 139). El intérprete tiene su propio límite de 100000 llamadas (error limpio), así que
+  un programa con una recursión de entre 100000 y unos 130000 niveles se comporta distinto: el intérprete informa un error y el
+  ejecutable funciona. Se midió con programas generados.
+- **El código no está optimizado** (a propósito: la cátedra pide corrección y la optimización es la etapa siguiente). Todos los valores
+  van a memoria y **cada temporal tiene su propia posición**: un método de 3000 asignaciones `x = x + 1` genera un marco de 3001
+  posiciones (24016 bytes) y 21017 líneas de assembly (unos 600 KB). Cada división incluye la comprobación del divisor -1 y cada
+  variable local se inicializa en 0 aunque el programa la asigne enseguida.
+- **Expresiones larguísimas.** El compilador recorre las expresiones con recursión; una suma `a + a + ... + a` de 20000 términos se compila
+  bien y con 30000 el compilador se cae por desborde de su pila (código 139), igual que el límite de la etapa 4. No ocurre con programas
+  reales.
+- **Las variables locales valen 0 al empezar** (decisión 9). Es lo que hace el intérprete y es determinista, pero un programa equivalente
+  en C tendría valores indefinidos; los resultados no son comparables con los de un compilador de C para programas que lean locales sin
+  asignar.
+- **Los números reales no están soportados** (decisión 20): un programa con `float` se rechaza al generar el código intermedio.
+- **Heredados de las etapas anteriores:** el lenguaje no tiene entrada ni salida; `-2147483648` no se puede escribir como literal; los
+  literales reales solo se validan contra el rango de `double`; los caracteres no ASCII se informan byte por byte; los comentarios de bloque
+  no se anidan; el ejemplo de la spec trae una llave `}` de más y su `main` `void` devuelve valores (rechazado por la regla 6); un solo
+  error sintáctico por corrida; el análisis semántico solo corre si no hay errores léxicos ni sintácticos; la búsqueda en la tabla de
+  símbolos es lineal; el intérprete no tiene límite de instrucciones y busca los métodos por nombre en cada llamada.
 
