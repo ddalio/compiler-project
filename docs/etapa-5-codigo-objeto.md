@@ -24,7 +24,7 @@ más de 6 argumentos, la división con negativos, el resultado de `INT_MIN / -1`
 | 1 | Plataforma y sintaxis | El assembly es **x86-64 de Linux en sintaxis AT&T**, la que acepta el ensamblador de GNU y la que usa el tutorial (`mov origen, destino`, registros con `%`, inmediatos con `$`). El archivo de salida tiene la extensión `.ass`, que define la cátedra para esta etapa. |
 | 2 | Cómo se obtiene el ejecutable | Se invoca **`gcc -x assembler - -o <ejecutable>`** y el assembly se le pasa **por su entrada estándar** (una tubería), sin archivos temporales. `gcc` ensambla y enlaza con la biblioteca de C, cuyo código de arranque es el que llama a `main`. Se lanza con `fork` y `execvp` pasando los argumentos como arreglo, **sin intérprete de comandos**, así ningún nombre de archivo necesita comillas. `-x assembler` es necesario porque `gcc` no reconoce la extensión `.ass` (sin él la trata como un script del enlazador). Si `gcc` no se puede ejecutar, o falla, el compilador informa el motivo por `stderr` y termina con código 2 (error de herramientas, no del programa fuente). |
 | 3 | Qué hace el compilador **sin `-target`** | La cátedra dice que el comportamiento por defecto es realizar la compilación completa y generar el ejecutable `nombreArchivo.out`, y que `-target` detiene la compilación en una etapa. Por eso, **sin `-target`, el compilador genera el ejecutable** (`<fuente>.out`, o el archivo de `-o`): corre todo el front end, genera el código intermedio, el assembly y lo ensambla y enlaza. El assembly no se guarda. `-target assembly` se detiene antes y escribe el **`.ass`** (en el archivo de `-o`, si se lo da). Los demás targets (`scan`, `parse`, `sem`, `codinter`) siguen funcionando igual. Hasta la etapa 4 el target por defecto era `codinter`; esto lo cambia (los tests que lo usaban pasan a indicar `-target codinter`). |
-| 4 | `-o`, `-debug` y `-run` | `-o` nombra el **ejecutable** (como dice la cátedra: "renombra el archivo ejecutable") o, con `-target assembly`, el `.ass`. Con `-debug` el assembly también sale por `stdout`. `-run` sigue valiendo solo con `-target codinter` y ejecuta el código intermedio con el intérprete. |
+| 4 | `-o`, `-debug` y `-run` | `-o` nombra el **ejecutable** (como dice la cátedra: "renombra el archivo ejecutable") o, con `-target assembly`, el `.ass`. Con `-debug` el assembly también sale por `stdout`. `-run` ejecuta el código intermedio con el intérprete: **implica `-target codinter`** (como sin `-target` ahora se genera el ejecutable, `c-tds -run programa.ctds` seguiría pidiendo el intérprete en vez de compilar) y sigue sin poder combinarse con otro target. |
 | 5 | Errores | Un programa con errores léxicos, sintácticos, semánticos o de generación (por ejemplo, un `float`) no genera ni `.ass` ni ejecutable, y termina con código 1. Un programa correcto genera siempre assembly válido: si `gcc` lo rechazara, es un error del compilador y se informa como error de herramientas (código 2). |
 
 ### Modelo de ejecución
@@ -181,4 +181,51 @@ con la biblioteca de C), la división y el resto por cero (el ejecutable termina
 decisión 19), `INT_MIN / -1`, un resultado negativo (`-5` sale como 251) y uno mayor que 255 (300 sale como 44), una variable local
 sin inicializar (vale 0) y el orden de evaluación con una global modificada por un método. Sin errores de memoria del generador con
 AddressSanitizer y UBSan. Los tests permanentes se agregan en la sección de testing.
+
+## 4. Detalles de implementación
+
+### Integración en el compilador (`main.c`)
+
+- **Sin `-target` hay una compilación completa.** `Options.target` vale `NULL` cuando no se da `-target`, y `main` despacha
+  a `run_executable`. Con `-target`, las cinco etapas (`scan`, `parse`, `sem`, `codinter`, `assembly`) son las únicas válidas;
+  cualquier otro nombre es `unknown target`. Como ya no queda ninguna etapa "todavía no disponible", se eliminó ese mensaje.
+- **El generador de código intermedio se factorizó en `build_ir`**: corre el front end y `irgen_generate` y devuelve el programa
+  en código intermedio solo si no hubo ningún error. Lo usan las tres etapas que lo necesitan: `run_codinter` (escribe el `.ci`),
+  `run_assembly` (escribe el `.ass`) y `run_executable` (arma el ejecutable). La tabla de símbolos y el AST siguen vivos hasta que
+  esas funciones terminan, como pide la etapa 4.
+- **El assembly se genera siempre en una cadena en memoria** (`make_assembly`, con `open_memstream`) y de ahí va al archivo, al
+  `gcc` o a `stdout` si hay `-debug`. Así `-debug` no genera el assembly dos veces y el assembly que se imprime es exactamente el
+  que se ensambla.
+- **`build_executable` lanza `gcc` con `fork` y `execlp`** y le pasa el assembly por una tubería conectada a su entrada estándar.
+  Detalles:
+  - se usa `gcc -x assembler - -o <ejecutable>`: `-x assembler` porque `gcc` no reconoce la extensión `.ass`, y `-` para leer
+    de la entrada estándar; no se usa un intérprete de comandos, por lo que el nombre del ejecutable no necesita comillas;
+  - antes de escribir se ignora `SIGPIPE`: si `gcc` termina antes de leer todo (porque falló), el compilador no muere por
+    la señal sino que informa el error;
+  - `write_all` repite la escritura si la interrumpe una señal y devuelve error si falla;
+  - el estado de `gcc` se espera con `waitpid`: si el hijo terminó con 127 (no se pudo ejecutar `gcc`) se informa
+    `cannot run 'gcc': is it installed? ...` con la sugerencia de usar `-target assembly`; si terminó con otro estado distinto de 0
+    se informa `gcc failed to assemble and link the program`. En ambos casos el código de salida es 2 (error de herramientas).
+- **`-run` sin `-target`** se interpreta como `-target codinter` (decisión 4); con otro target explícito sigue siendo un error de uso.
+- **Errores**: igual que en las etapas anteriores, si el programa tiene errores léxicos, sintácticos, semánticos o de generación
+  (un `float`), no se genera nada y el código de salida es 1.
+
+### Cambios en las etapas anteriores
+
+- **El target por defecto** dejó de ser `codinter`: sin `-target` se genera el ejecutable. Los tests que verificaban el `.ci` por
+  defecto ahora pasan `-target codinter`. El test que comprobaba que `-target assembly` se rechazaba ("not available yet") se
+  reemplazó por tests de que lo genera. Los 183 casos anteriores siguen pasando (con esos cambios).
+- **`-run`** ahora implica `-target codinter` (los tests de `-run` no cambiaron).
+- Se agregaron `x86gen.o` al Makefile (sección 3 de esta etapa) y las llamadas al sistema `fork`, `pipe`, `execlp`, `waitpid` y
+  `signal` a `main.c`; el programa sigue sin necesitar nada fuera de POSIX y de `gcc` para el ejecutable.
+
+### Verificación de la integración
+
+Se probó el compilador completo con un programa que calcula el factorial de 5: sin `-target` genera `p.out` (y no deja ningún
+archivo intermedio) y el ejecutable termina con código 120; con `-o` lo nombra; con `-target assembly -o salida.s` escribe el
+assembly, que ensamblado aparte con `gcc -x assembler` da el mismo ejecutable (código 120); con `-debug` imprime el assembly por
+`stdout` y además arma el ejecutable; `-run` sin `-target` interpreta el código y escribe `120`; `-run -target assembly` se rechaza
+con código 2; un error semántico y un programa con `float` no generan ejecutable (código 1); con `PATH` vacío (sin `gcc`)
+informa `cannot run 'gcc'` con código 2. Con AddressSanitizer y UBSan no hay errores de memoria sobre los programas de prueba de
+las etapas 1 a 4 por el camino del ejecutable y por el del assembly. Los tests permanentes se agregan en la sección de testing.
 

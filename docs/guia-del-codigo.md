@@ -22,6 +22,8 @@ Para estudiar el proyecto: qué hace cada archivo y cada función. Describe el c
            semantic.c: semantic_analyze(AST, tabla de símbolos) ──► main.c: run_sem() ──► archivo.sem  (target sem)
   Etapa 4: AST anotado + tabla de símbolos ──► irgen.c: irgen_generate() ──► ir.c: ir_print() ──► archivo.ci  (target codinter)
            con -run: interp.c: interp_run() ejecuta el código intermedio desde main
+  Etapa 5: código intermedio ──► x86gen.c: x86_generate() ──► archivo.ass  (target assembly)
+           sin -target: el assembly va por una tubería a gcc, que genera el ejecutable archivo.out
 ```
 
 | Archivo | Para qué sirve |
@@ -195,8 +197,8 @@ memoria), `parse_root`, `yyerror` y, vía `bison.tab.h`, `yydebug`.
 |---------|----------|
 | `static void usage(FILE *out)` | Imprime la ayuda de uso. |
 | `static int has_extension(const char *name, const char *ext)` | Indica si `name` termina en `ext` y tiene algo antes (por eso `.ctds` solo no vale). |
-| `static int check_target(const char *target)` | Acepta `scan`, `parse`, `sem` y `codinter`; para `assembly` informa "not available yet" y para cualquier otro "unknown target". (`sem` es el análisis semántico: la cátedra lo ejecuta como parte de la compilación y le asigna la extensión `.sem`, pero no lo lista entre los targets.) |
-| `static int parse_args(int argc, char **argv, Options *opt)` | Recorre los argumentos y completa `Options`: `-o` y `-target` toman el argumento siguiente, `-debug` y `-run` son banderas y cualquier otro argumento que empiece con `-` es una opción desconocida (por eso un archivo no puede empezar con `-`). Valida que haya un solo archivo de entrada, que termine en `.ctds`, que el target sea válido y que `-run` solo se use con `-target codinter`. El target por defecto es `codinter`, la etapa actual. |
+| `static int check_target(const char *target)` | Acepta `scan`, `parse`, `sem`, `codinter` y `assembly`; cualquier otro nombre es `unknown target`. (`sem` es el análisis semántico: la cátedra lo ejecuta como parte de la compilación y le asigna la extensión `.sem`, pero no lo lista entre los targets.) |
+| `static int parse_args(int argc, char **argv, Options *opt)` | Recorre los argumentos y completa `Options`: `-o` y `-target` toman el argumento siguiente, `-debug` y `-run` son banderas y cualquier otro argumento que empiece con `-` es una opción desconocida (por eso un archivo no puede empezar con `-`). Valida que haya un solo archivo de entrada, que termine en `.ctds`, que el target (si se dio) sea válido y que `-run` no se combine con otro target. Sin `-target`, `opt->target` queda en `NULL` y se genera el ejecutable; `-run` sin `-target` equivale a `-target codinter`. |
 | `static char *output_path(const Options *opt, const char *stage_ext)` | Calcula el archivo de salida: el de `-o` si se dio; si no, el del fuente cambiando `.ctds` por la extensión de la etapa (`.lex`, `.sint`). Devuelve memoria que hay que liberar con `free`. |
 | `static FILE *open_input(const Options *opt)` | Abre el fuente; si falla informa el motivo. |
 | `static int write_failed(const char *path)` | Informa que no se pudo escribir la salida y devuelve el código 2. |
@@ -209,8 +211,14 @@ memoria), `parse_root`, `yyerror` y, vía `bison.tab.h`, `yydebug`.
 | `print_ast_cb`, `print_ir_cb` | Adaptan `ast_print` e `ir_print` a la firma que espera `write_output`. |
 | `static int run_sem(const Options *opt)` | Etapa sem: corre el front end y, si no hubo errores semánticos, escribe el AST anotado en el `.sem`. Con `-debug` imprime el AST por `stdout` y la traza de la tabla por `stderr`. |
 | `static int run_program(const IrProgram *prog)` | `-run`: llama a `interp_run`; si hubo un error de ejecución (ya informado) devuelve el código 1; si `main` devolvió un valor, lo imprime en una línea por `stdout` (un `boolean` sale como 1 o 0). |
-| `static int run_codinter(const Options *opt)` | Etapa codinter: corre el front end y, solo si no hubo ningún error, llama a `irgen_generate` (que devuelve `NULL` si el programa usa `float`) y escribe el código de tres direcciones en el `.ci`. Con `-debug` lo imprime también por `stdout`. Con `-run` (y sin errores al escribir) ejecuta el programa con `run_program`. La tabla de símbolos y el AST se liberan recién **después** de generar el código. |
-| `int main(int argc, char **argv)` | Interpreta los argumentos y llama a `run_scan`, `run_parse`, `run_sem` o `run_codinter` según el target. |
+| `static int build_ir(opt, f, prog)` | Front end completo (`run_front`) y generación de código intermedio. Devuelve `EXIT_OK` solo si el programa no tiene ningún error (léxico, sintáctico, semántico ni de generación): entonces `f` y `*prog` siguen vivos y el que llama debe liberarlos. Si no, devuelve el código de salida y no deja nada que liberar. Lo usan `run_codinter`, `run_assembly` y `run_executable`. |
+| `static int run_codinter(const Options *opt)` | Etapa codinter: llama a `build_ir` y escribe el código de tres direcciones en el `.ci`. Con `-debug` lo imprime también por `stdout`. Con `-run` ejecuta el programa con `run_program`. |
+| `static char *make_assembly(opt, prog, len)` | Genera el assembly (`x86_generate`) en una cadena en memoria, que hay que liberar con `free`, y con `-debug` también la imprime por `stdout`. |
+| `static int run_assembly(const Options *opt)` | Etapa assembly: llama a `build_ir`, genera el assembly y lo escribe en el `.ass` (o en el archivo de `-o`). |
+| `static int write_all(fd, buf, len)` | Escribe todo un buffer en un descriptor, repitiendo si la interrumpe una señal. |
+| `static int build_executable(assembly, len, exe_path)` | Arma el ejecutable: con `fork` y `execlp` lanza `gcc -x assembler - -o exe_path` y le pasa el assembly por una tubería conectada a su entrada estándar. Ignora `SIGPIPE` mientras escribe, espera al hijo con `waitpid` e informa si no se pudo ejecutar `gcc` (estado 127) o si falló. Devuelve `EXIT_OK` o `EXIT_USAGE`. |
+| `static int run_executable(const Options *opt)` | Sin `-target`: llama a `build_ir`, genera el assembly y arma el ejecutable `<fuente>.out` (o el de `-o`). El assembly no se guarda. |
+| `int main(int argc, char **argv)` | Interpreta los argumentos y llama a `run_executable` (sin `-target`), `run_scan`, `run_parse`, `run_sem`, `run_codinter` o `run_assembly` según el target. |
 
 Códigos de salida: 0 correcto, 1 errores en el programa fuente (léxicos o sintácticos), 2 error de uso o de
 archivos.
@@ -255,7 +263,7 @@ Grupos de pruebas:
 | Código intermedio errores | `tests/codinter/errors/` | Código 1, no se genera `.ci`, `stderr` igual al esperado (errores de generación y de etapas anteriores). |
 | Intérprete: programas | `tests/codinter/run/` | `-run`: código 0, nada por `stderr` y `stdout` igual al esperado (el valor que devuelve `main`). |
 | Intérprete: errores | `tests/codinter/run_errors/` | `-run`: código 1, nada por `stdout` y `stderr` igual al error de ejecución esperado. |
-| Línea de comandos | (en el script) | Errores de uso, nombres de salida por defecto y con `-o`, y cada target: el por defecto (`codinter`) genera `.ci`, `-target sem` genera `.sem`, `-target parse` y `-target scan` siguen funcionando, `-debug` muestra el AST y la traza de la tabla, `-target parse` no corre el análisis semántico, `-run` escribe el `.ci` y ejecuta, y solo vale con `-target codinter`. |
+| Línea de comandos | (en el script) | Errores de uso, nombres de salida por defecto y con `-o`, y cada target: `-target codinter` genera `.ci`, `-target assembly` genera `.ass`, sin `-target` se genera el ejecutable, `-target sem` genera `.sem`, `-target parse` y `-target scan` siguen funcionando, `-debug` muestra el AST y la traza de la tabla, `-target parse` no corre el análisis semántico, `-run` escribe el `.ci` y ejecuta, y solo vale con `-target codinter`. |
 
 ## 9. `src/types.h` y `src/types.c`
 
@@ -708,4 +716,5 @@ Funciones internas de `x86gen.c` (todas `static`):
 | `frame_size(f)` | Tamaño del marco: 8 bytes por posición, redondeado hacia arriba a un múltiplo de 16 (así la pila queda alineada). |
 | `gen_prologue(g, f)` | Reserva el marco; guarda en sus posiciones los parámetros que llegaron en registros; copia los que llegaron por la pila (desde `16(%rbp)`, ...); y pone en 0 las variables locales. |
 | `gen_method(g, f)` | Escribe un método: una línea en blanco, `.globl main` si corresponde, la etiqueta con el encabezado como comentario, el prólogo y las instrucciones. Si el código no termina en un `ret`, agrega un retorno al final. |
+
 
