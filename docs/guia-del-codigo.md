@@ -40,6 +40,7 @@ Para estudiar el proyecto: qué hace cada archivo y cada función. Describe el c
 | `src/ir.h`, `src/ir.c` | Código intermedio (código de tres direcciones): operandos, instrucciones, métodos, impresión y liberación. |
 | `src/irgen.h`, `src/irgen.c` | Generador de código intermedio: recorre el AST anotado y produce el código de tres direcciones. |
 | `src/interp.h`, `src/interp.c` | Intérprete del código intermedio: ejecuta el programa desde `main` (opción `-run`). |
+| `src/x86gen.h`, `src/x86gen.c` | Generador de assembly x86-64: traduce el código intermedio a assembly de Linux en sintaxis AT&T. |
 | `Makefile` | Compila todo y corre los tests. |
 | `tests/run_tests.sh` | Corre todos los casos de test. |
 
@@ -501,6 +502,8 @@ etiquetas creadas (`nlabels`). Los arreglos dinámicos empiezan con capacidad 8 
 | `Operand ir_new_temp(IrFunc *f)` | Crea el temporal siguiente del método (`t1`, `t2`, ...). |
 | `Operand ir_new_label(IrProgram *prog)` | Crea la etiqueta siguiente del programa (`L1`, `L2`, ...), única en todo el programa. |
 | `void ir_emit(IrFunc *f, IrOp op, Operand a, Operand b, Operand result)` | Agrega una instrucción al final del método. |
+| `void ir_print_instr(FILE *out, const Instr *in)` | Escribe el texto de **una** instrucción (`t1 = a + b`, `jz t1, L2`, `L3:`) sin sangría ni salto de línea. Lo usa `ir_print` para cada línea del `.ci` y el generador de assembly para los comentarios. |
+| `int ir_slot(const IrFunc *f, Operand o)` | Posición (desde 0) de un temporal o de una variable que no es global dentro del marco de su método: primero los parámetros, después las locales y al final los temporales (`t1` es el primero). La usan el intérprete y el generador de assembly, para ubicar igual cada valor. |
 | `void ir_print(FILE *out, const IrProgram *prog)` | Escribe el programa en el formato del `.ci`: las líneas `global`, y por cada método `func nombre(params)`, sus `local`, las instrucciones con 2 espacios de sangría (las etiquetas sin sangría) y `end`, separando con líneas en blanco. |
 
 Funciones internas de `ir.c` (todas `static`):
@@ -516,7 +519,7 @@ Funciones internas de `ir.c` (todas `static`):
 | `vars_free(vars, n)` | Libera un arreglo de variables. |
 | `print_operand(out, o)` | Escribe un operando: constante, `@global`, local, `tN`, `LN` o nombre de método. |
 | `operator_text(op)` | Texto del operador de una instrucción aritmética, de comparación o de negación. |
-| `print_instr(out, in)` | Escribe una instrucción en su formato de texto. |
+| `print_instr_line(out, in)` | Escribe una línea del `.ci`: las etiquetas sin sangría y el resto con 2 espacios, llamando a `ir_print_instr`. |
 
 ## 15. `src/irgen.h` y `src/irgen.c`
 
@@ -602,7 +605,7 @@ Funciones internas de `interp.c` (todas `static`):
 | `xcalloc`, `xrealloc` | Reservan memoria; si no hay informan y terminan con código 2. |
 | `build_funcs(in)` | Arma la tabla de métodos y, para cada uno, la posición de cada etiqueta (recorre su código buscando `IR_LABEL`). |
 | `find_func(in, name)` | Busca un método por nombre. |
-| `slot_of(info, o)` | Posición de un operando en los `slots` del marco: primero los parámetros, después las locales y al final los temporales (`t1` es el primero de ellos). |
+| (`ir_slot`) | La posición de un operando en los `slots` del marco la calcula `ir_slot` (de `ir.c`): primero los parámetros, después las locales y al final los temporales. |
 | `read_operand(in, fr, o)`, `write_operand(in, fr, o, value)` | Leen y escriben un operando: una constante, una global (en `in->globals`) o un slot del marco. |
 | `wrap_add`, `wrap_sub`, `wrap_mul`, `wrap_neg` | Aritmética de 32 bits que da la vuelta, hecha con enteros sin signo para evitar el comportamiento indefinido de C en el desborde. |
 | `push_frame(in, info, n)` | Apila el marco de una llamada: reserva los slots en 0 y copia en los parámetros los `n` últimos argumentos de la pila de argumentos. |
@@ -653,4 +656,56 @@ independiente. `eval_binary` y `eval_unary` arman un `main` que devuelve `a op b
 | `test_recursion_frames` | Cada llamada tiene su propio marco: las locales no se pisan al recursar. |
 | `test_call_stack_overflow` | Una recursión infinita es un error de ejecución, no un fallo del intérprete. |
 | `test_deep_recursion` | Una recursión finita de 50000 niveles funciona (1250025000). |
+
+## 18. `src/x86gen.h` y `src/x86gen.c`
+
+El **generador de assembly** traduce el código intermedio a **assembly x86-64 de Linux en sintaxis AT&T** (la del ensamblador de
+GNU: `mov origen, destino`, registros con `%`, inmediatos con `$`). Es una traducción **instrucción por instrucción**, sin
+optimizar, que sigue el esquema del tutorial de la cátedra: cada parámetro, variable local y temporal vive en una posición de 8
+bytes del marco de pila, y cada operación carga sus operandos en `%r10` / `%r11`, opera y guarda el resultado en la pila. Las
+decisiones están en `etapa-5-codigo-objeto.md`.
+
+**Cómo leer el assembly generado.**
+
+- Una línea con `# ...` sola es el **comentario con la instrucción del código intermedio** que se traduce a continuación.
+- Los símbolos de métodos y globales llevan el prefijo `ctds_` (`ctds_add`, `ctds_g`), salvo `main`. Las etiquetas del código
+  intermedio `L1`, `L2`, ... son `.L1`, `.L2`, ...; las de las divisiones son `.Ldiv<n>` y `.Ldiv<n>e`.
+- `-8(%rbp)`, `-16(%rbp)`, ... son las posiciones del marco: la posición `k` está en `-8*(k+1)(%rbp)`, primero los parámetros,
+  después las locales y al final los temporales. `ctds_g(%rip)` es una global.
+- Los sufijos `l` (`movl`, `addl`, `cmpl`) indican operaciones de **32 bits** y los registros `%r10d`, `%r11d`, `%eax` son las partes
+  de 32 bits de `%r10`, `%r11`, `%rax`.
+- El prólogo es `pushq %rbp`, `movq %rsp, %rbp` y `subq $N, %rsp` (reserva el marco); el epílogo es `leave` y `ret`. Los primeros
+  6 argumentos llegan en `%edi`, `%esi`, `%edx`, `%ecx`, `%r8d`, `%r9d` y el resto en `16(%rbp)`, `24(%rbp)`, ...; el valor
+  devuelto sale en `%eax`.
+
+`x86gen.h` expone una sola función:
+
+| Función | Qué hace |
+|---------|----------|
+| `void x86_generate(FILE *out, const IrProgram *prog, const char *source_name)` | Escribe el assembly de `prog` en `out`: un comentario con el nombre del fuente, la sección `.data` con las globales (`ctds_g: .long 0`), la sección `.text` con los métodos en orden, y al final `.section .note.GNU-stack,"",@progbits`. No puede fallar. |
+
+`Gen` es el estado de la generación: el archivo, el método actual, el contador de etiquetas de división y la lista de
+argumentos pendientes (los `param` que todavía no consumió un `call`).
+
+Funciones internas de `x86gen.c` (todas `static`):
+
+| Función | Qué hace |
+|---------|----------|
+| `put(g, comment, mnem, fmt, ...)` | Escribe una instrucción (`        movl    %edi, -8(%rbp)`) con el mnemónico alineado y, si se da, un comentario alineado en la columna 32. Los operandos se arman como en `printf`. |
+| `put_label(g, name, comment)` | Escribe una etiqueta (`nombre:`) con un comentario opcional. |
+| `symbol_text(name, buf, n)` | Nombre del símbolo de un método: `main`, o `ctds_<nombre>` para los demás. |
+| `slot_offset(k)` | Desplazamiento respecto de `%rbp` de la posición `k` del marco: `-8*(k+1)`. |
+| `operand_text(g, o, buf, n)` | Texto de un operando como origen o destino: una constante (`$5`), una posición del marco (`-8(%rbp)`, usando `ir_slot`) o una global (`ctds_g(%rip)`). |
+| `load(g, o, reg)`, `store(g, reg, o)` | `movl <operando>, %reg` y `movl %reg, <operando>`. |
+| `gen_arith(g, in, mnem)` | `+`, `-` y `*`: carga el primer operando en `%r10d`, aplica `addl` / `subl` / `imull` con el segundo y guarda el resultado. |
+| `gen_compare(g, in, set)` | `<`, `>` y `==`: `cmpl` y `setl` / `setg` / `sete` (que dejan 1 o 0 en `%r11b`) y `movzbl` para extenderlo a 32 bits. |
+| `gen_divide(g, in)` | División y resto: `%eax` con el dividendo, `cltd` (extiende el signo a `%edx`), el divisor en `%r10d` e `idivl`; el cociente queda en `%eax` y el resto en `%edx`. Antes se compara el divisor con -1: en ese caso no se ejecuta `idivl` (provocaría una excepción con `INT_MIN`) y el cociente es `-a` (`negl`) y el resto 0. |
+| `gen_cond_jump(g, in)` | `jz` y `jnz`: carga el operando en `%r10d` (puede ser una constante), `testl` y `je` / `jne`. |
+| `gen_param(g, in)` | `param`: solo agrega el argumento a la lista de pendientes. |
+| `gen_call(g, in)` | `call`: toma los últimos `n` argumentos pendientes; si hay una cantidad impar en la pila agrega un relleno de 8 bytes; apila los argumentos 7.º y siguientes de derecha a izquierda (cada uno por `%r10`); carga los primeros 6 en los registros; hace el `call`; retira de la pila los argumentos y el relleno con `addq`; guarda `%eax` en el resultado. |
+| `gen_return(g, in)` | `ret`: carga el valor en `%eax` si hay; un `ret` sin valor de `main` pone `%eax` en 0 (el programa termina con código 0); luego `leave` y `ret`. |
+| `gen_instr(g, in)` | Escribe el comentario con la instrucción del código intermedio y la traduce. Una etiqueta se escribe sola (`.L1:`). Para `MOVE`, `NEG` y `NOT` genera la secuencia directamente; el resto llama a las funciones anteriores. |
+| `frame_size(f)` | Tamaño del marco: 8 bytes por posición, redondeado hacia arriba a un múltiplo de 16 (así la pila queda alineada). |
+| `gen_prologue(g, f)` | Reserva el marco; guarda en sus posiciones los parámetros que llegaron en registros; copia los que llegaron por la pila (desde `16(%rbp)`, ...); y pone en 0 las variables locales. |
+| `gen_method(g, f)` | Escribe un método: una línea en blanco, `.globl main` si corresponde, la etiqueta con el encabezado como comentario, el prólogo y las instrucciones. Si el código no termina en un `ret`, agrega un retorno al final. |
 

@@ -37,7 +37,7 @@ más de 6 argumentos, la división con negativos, el resultado de `INT_MIN / -1`
 | 9 | Variables locales | **Se inicializan en 0 en el prólogo** (`movl $0, ...`). La spec no define su valor; así el código nativo se comporta igual que el intérprete y no depende de la basura que haya en la pila. Los temporales no hace falta inicializarlos. |
 | 10 | Variables globales | Van en la sección de datos (`.data`) como `ctds_<nombre>: .long 0`, o sea **inicializadas en 0**, y se acceden con direccionamiento relativo a `%rip` (`ctds_g(%rip)`), que sirve también para ejecutables independientes de la posición. |
 | 11 | Nombres de símbolos | Todo método y toda global llevan el prefijo **`ctds_`** (`ctds_fact`, `ctds_g`), **salvo `main`**, que tiene que llamarse así porque lo llama la biblioteca de C. El prefijo evita choques con los símbolos de la biblioteca: un método llamado `printf`, `exit` o `puts` es válido en C-TDS y, sin prefijo, fallaría al enlazar o reemplazaría a la función de la biblioteca. `main` se declara `.globl`. |
-| 12 | Etiquetas | La etiqueta `L<n>` del código intermedio pasa a **`.L<n>`**: el prefijo `.L` hace que el ensamblador la trate como local (no aparece en la tabla de símbolos) y, como los números son únicos en todo el programa, no chocan entre métodos. Las etiquetas que necesita el propio generador (decisión 16) se llaman `.Ldiv<n>`, que no pueden confundirse con las anteriores. |
+| 12 | Etiquetas | La etiqueta `L<n>` del código intermedio pasa a **`.L<n>`**: el prefijo `.L` hace que el ensamblador la trate como local (no aparece en la tabla de símbolos) y, como los números son únicos en todo el programa, no chocan entre métodos. Las etiquetas que necesita el propio generador para la división (decisión 18) se llaman `.Ldiv<n>` y `.Ldiv<n>e`, que no pueden confundirse con las anteriores (después de `.L` siguen letras y no solo dígitos). |
 
 ### Llamadas y valor devuelto
 
@@ -102,7 +102,7 @@ ctds_g: .long   0
 ctds_add:                       # func add(a, b)
         pushq   %rbp
         movq    %rsp, %rbp
-        subq    $32, %rsp       # 3 posiciones (a, b, t1) = 24 bytes -> 32
+        subq    $32, %rsp       # 3 posiciones = 24 bytes -> 32
         movl    %edi, -8(%rbp)  # a
         movl    %esi, -16(%rbp) # b
         # t1 = a + b
@@ -118,7 +118,7 @@ ctds_add:                       # func add(a, b)
 main:                           # func main()
         pushq   %rbp
         movq    %rsp, %rbp
-        subq    $16, %rsp       # 1 posicion (t1) = 8 bytes -> 16
+        subq    $16, %rsp       # 1 posicion = 8 bytes -> 16
         # param 3
         # param 4
         # t1 = call add, 2
@@ -137,6 +137,48 @@ main:                           # func main()
         .section .note.GNU-stack,"",@progbits
 ```
 
-Los argumentos se cargan en `%edi` y `%esi` recién en el `call` (decisión 14). En `ctds_add` las posiciones del marco son
+Este es el **resultado real** del generador para ese programa (se verificó que se ensambla y que el ejecutable termina con
+código 0). Los argumentos se cargan en `%edi` y `%esi` recién en el `call` (decisión 14). En `ctds_add` las posiciones del marco son
 `a` en `-8(%rbp)`, `b` en `-16(%rbp)` y `t1` en `-24(%rbp)`; el marco de 24 bytes se redondea a 32. `main`, que es `void`, termina con
 `movl $0, %eax` (decisión 16).
+
+## 3. Diseño y decisiones clave
+
+### Generador de assembly (`x86gen.h`, `x86gen.c`)
+
+`x86_generate(out, prog, source_name)` recorre el programa en código intermedio y escribe el assembly en un `FILE *`. Es una
+traducción **instrucción por instrucción**: cada instrucción del código intermedio se traduce a una secuencia fija de instrucciones
+x86-64, sin mirar las vecinas. Eso hace al generador simple y fácil de verificar, a costa de código lento (decisión 7).
+
+- **El patrón de casi toda operación** es: cargar el primer operando en `%r10d`, combinar con el segundo (que puede ser una
+  constante, una posición del marco o una global, porque x86 permite que el segundo operando de `addl`, `subl`, `imull` y `cmpl` esté en
+  memoria) y guardar el resultado en su posición. Por ejemplo, `t1 = a + b` es `movl -8(%rbp), %r10d`, `addl -16(%rbp), %r10d` y
+  `movl %r10d, -24(%rbp)`.
+- **`param` no genera código**: el generador guarda los argumentos pendientes (`pending`) y en el `call` los carga en los registros
+  o los apila. Como entre los `param` y su `call` no hay otras instrucciones, cargar los argumentos recién en el `call` es equivalente a hacerlo
+  en cada `param`.
+- **Las posiciones del marco se calculan con `ir_slot`**, la misma función que usa el intérprete. Así el assembly y el intérprete
+  ubican de la misma forma parámetros, locales y temporales (se movió `slot_of` del intérprete a `ir.c`).
+- **Cada método termina con un retorno.** Si su código no termina en un `ret` (por ejemplo, un método con tipo que termina en una
+  etiqueta, como `spec_example_fixed`), el generador agrega un `leave` y `ret` final; sin él, la ejecución caería en el código del
+  método siguiente. Para `main` ese retorno devuelve 0.
+- **Los comentarios explican el código**: cada instrucción del código intermedio aparece como comentario antes de su
+  traducción (se imprime con `ir_print_instr`, que se separó de `ir_print` para esto), y los comentarios al final de línea están
+  alineados en la columna 32. Es lo que permite leer el assembly junto con el `.ci`.
+- **La división se traduce a una secuencia con un salto** (decisión 18): se compara el divisor con -1 para evitar la excepción de
+  `INT_MIN / -1`. Cada división usa un par de etiquetas `.Ldiv<n>` y `.Ldiv<n>e` con un contador propio.
+- **La alineación de la pila** para los `call` con una cantidad impar de argumentos en la pila se resuelve con un relleno de 8 bytes
+  (decisión 15), que se quita junto con los argumentos.
+
+### Verificación del generador
+
+Se probó con un programa temporal (que no se versiona) que compila a assembly, lo ensambla con `gcc`, ejecuta el resultado y
+compara su código de salida. Con los **26 programas** de `tests/codinter/run/` el código de salida coincide con el valor que
+devuelve el intérprete (módulo 256), y el ensamblado no emite ninguna advertencia. Además se probaron casos propios de esta etapa:
+funciones de 7, 8 y 9 argumentos (por pila, con y sin relleno), una llamada de 7 argumentos como argumento de otra, una recursión con
+9 argumentos, un método llamado `printf` y otro `exit` y globales llamadas `puts` y `malloc` (el prefijo `ctds_` evita el choque
+con la biblioteca de C), la división y el resto por cero (el ejecutable termina con `SIGFPE`, código 136, como se documentó en la
+decisión 19), `INT_MIN / -1`, un resultado negativo (`-5` sale como 251) y uno mayor que 255 (300 sale como 44), una variable local
+sin inicializar (vale 0) y el orden de evaluación con una global modificada por un método. Sin errores de memoria del generador con
+AddressSanitizer y UBSan. Los tests permanentes se agregan en la sección de testing.
+
