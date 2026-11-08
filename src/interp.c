@@ -97,17 +97,6 @@ static const FuncInfo *find_func(const Interp *in, const char *name)
 
 /* -------------------------------------------------- operandos y variables */
 
-/* Posicion de un operando dentro de los slots del marco: primero los
- * parametros, despues las locales y al final los temporales (t1, t2, ...). */
-static int slot_of(const FuncInfo *info, Operand o)
-{
-    const IrFunc *f = info->fn;
-
-    if (o.kind == OPD_TEMP)
-        return f->nparams + f->nlocals + (int)o.value - 1;
-    return o.var->is_param ? o.var->index : f->nparams + o.var->index;
-}
-
 static int32_t read_operand(const Interp *in, const Frame *fr, Operand o)
 {
     switch (o.kind) {
@@ -116,9 +105,9 @@ static int32_t read_operand(const Interp *in, const Frame *fr, Operand o)
     case OPD_VAR:
         if (o.var->is_global)
             return in->globals[o.var->index];
-        return fr->slots[slot_of(fr->info, o)];
+        return fr->slots[ir_slot(fr->info->fn, o)];
     case OPD_TEMP:
-        return fr->slots[slot_of(fr->info, o)];
+        return fr->slots[ir_slot(fr->info->fn, o)];
     default:
         return 0;
     }
@@ -129,7 +118,7 @@ static void write_operand(Interp *in, Frame *fr, Operand o, int32_t value)
     if (o.kind == OPD_VAR && o.var->is_global)
         in->globals[o.var->index] = value;
     else
-        fr->slots[slot_of(fr->info, o)] = value;
+        fr->slots[ir_slot(fr->info->fn, o)] = value;
 }
 
 /* Aritmetica de 32 bits con signo que da la vuelta, sin comportamiento

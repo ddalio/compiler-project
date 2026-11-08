@@ -144,4 +144,14 @@ void ir_emit(IrFunc *f, IrOp op, Operand a, Operand b, Operand result);
 /* Escribe el programa en el formato de texto del archivo .ci. */
 void ir_print(FILE *out, const IrProgram *prog);
 
+/* Escribe el texto de una instruccion ("t1 = a + b", "jz t1, L2", "L3:") sin
+ * sangria ni salto de linea. */
+void ir_print_instr(FILE *out, const Instr *in);
+
+/* Posicion (desde 0) de un operando dentro del marco de su metodo: primero los
+ * parametros, despues las locales y al final los temporales (t1 es el primero
+ * de ellos). Vale para temporales y para variables que no son globales. Lo usan
+ * el interprete y el generador de assembly, para que ubiquen igual cada valor. */
+int ir_slot(const IrFunc *f, Operand o);
+
 #endif /* IR_H */

@@ -305,15 +305,13 @@ static const char *operator_text(IrOp op)
     }
 }
 
-static void print_instr(FILE *out, const Instr *in)
+void ir_print_instr(FILE *out, const Instr *in)
 {
-    if (in->op == IR_LABEL) {               /* las etiquetas van sin sangria */
-        print_operand(out, in->a);
-        fputs(":\n", out);
-        return;
-    }
-    fputs("  ", out);
     switch (in->op) {
+    case IR_LABEL:
+        print_operand(out, in->a);
+        fputc(':', out);
+        break;
     case IR_MOVE:
         print_operand(out, in->result);
         fputs(" = ", out);
@@ -363,9 +361,15 @@ static void print_instr(FILE *out, const Instr *in)
             print_operand(out, in->a);
         }
         break;
-    case IR_LABEL:
-        break;
     }
+}
+
+/* Una linea del .ci: las etiquetas sin sangria y el resto con 2 espacios. */
+static void print_instr_line(FILE *out, const Instr *in)
+{
+    if (in->op != IR_LABEL)
+        fputs("  ", out);
+    ir_print_instr(out, in);
     fputc('\n', out);
 }
 
@@ -389,7 +393,14 @@ void ir_print(FILE *out, const IrProgram *prog)
         for (int i = 0; i < f->nlocals; i++)
             fprintf(out, "  local %s\n", f->locals[i]->name);
         for (int i = 0; i < f->ncode; i++)
-            print_instr(out, &f->code[i]);
+            print_instr_line(out, &f->code[i]);
         fputs("end\n", out);
     }
+}
+
+int ir_slot(const IrFunc *f, Operand o)
+{
+    if (o.kind == OPD_TEMP)
+        return f->nparams + f->nlocals + (int)o.value - 1;
+    return o.var->is_param ? o.var->index : f->nparams + o.var->index;
 }
