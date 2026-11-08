@@ -16,7 +16,7 @@ FLEX    ?= flex
 BISON   ?= bison
 
 OBJS    := $(BUILD)/main.o $(BUILD)/tokens.o $(BUILD)/tree.o \
-           $(BUILD)/types.o $(BUILD)/ast.o $(BUILD)/symtab.o $(BUILD)/semantic.o \
+           $(BUILD)/types.o $(BUILD)/ast.o $(BUILD)/symtab.o $(BUILD)/semantic.o $(BUILD)/ir.o \
            $(BUILD)/lex.yy.o $(BUILD)/bison.tab.o
 
 # Tests unitarios (tests/unit): cada uno es un ejecutable que se arma en $(BUILD).
@@ -51,7 +51,7 @@ $(BUILD)/lex.yy.c: src/scanner.l | $(BUILD)
 $(BUILD)/lex.yy.o: $(BUILD)/lex.yy.c src/scanner.h src/tokens.h src/tree.h $(BUILD)/bison.tab.h
 	$(CC) $(CFLAGS) -Wno-unused-function -c $< -o $@
 
-$(BUILD)/%.o: src/%.c src/scanner.h src/parser.h src/tokens.h src/tree.h src/types.h src/ast.h src/symtab.h src/semantic.h \
+$(BUILD)/%.o: src/%.c src/scanner.h src/parser.h src/tokens.h src/tree.h src/types.h src/ast.h src/symtab.h src/semantic.h src/ir.h \
                $(BUILD)/bison.tab.h | $(BUILD)
 	$(CC) $(CFLAGS) -c $< -o $@
 
