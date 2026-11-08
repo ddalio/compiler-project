@@ -278,7 +278,7 @@ error y sale con código 2. Además, `-target assembly` funciona sin `gcc`.
 **Línea de comandos:** `-target assembly` genera el `.ass` y no el ejecutable; `-o` con `-target assembly`; sin `-target` se genera el
 ejecutable (y ningún archivo intermedio) y termina con el código esperado.
 
-**Regresión y memoria:** los 183 casos de las etapas 1 a 4 siguen pasando. En total `make test` ejecuta 246 casos y `make test-asan` los
+**Regresión y memoria:** los 183 casos de las etapas 1 a 4 siguen pasando. En total `make test` ejecuta 247 casos (el último es el de `-o` sobre el propio fuente) y `make test-asan` los
 mismos con AddressSanitizer y UBSan, sin errores de memoria. Se comprobó además que los tests detectan fallas: al cambiar a propósito la
 instrucción de la multiplicación por una suma en el generador, y un código de salida y una etiqueta en dos `.expected`, fallaron el unitario,
 el caso `loop`, y los programas nativos que multiplican; al restaurar todo volvieron a pasar.
