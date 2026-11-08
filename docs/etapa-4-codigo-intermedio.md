@@ -174,3 +174,38 @@ con el ejemplo del documento (se comparó con un script). También se verificó 
 y etiquetas sean los esperados y que `ir_program_free(NULL)` sea válido. Sin errores de memoria con AddressSanitizer y UBSan.
 Los tests unitarios permanentes se agregan en la sección de testing.
 
+### Generador de código (`irgen.h`, `irgen.c`)
+
+Implementa las decisiones 5 a 14 recorriendo el AST anotado en **un solo paso**, en el orden del fuente. Cada método se
+genera de forma independiente: se agrega al programa, se declaran sus parámetros y sus locales y se genera su cuerpo.
+
+- **`gen_expr` devuelve un operando.** En vez de generar siempre un temporal, una constante devuelve la constante y un
+  identificador su variable: `x = y + 1` no copia `y` ni `1` a temporales. Solo las operaciones, las llamadas y los
+  operadores lógicos producen temporales nuevos.
+- **La asignación es una copia del valor ya calculado**: `x = a + b` genera `t = a + b` y después `x = t`. No se intenta
+  escribir el resultado directo en `x`; eso es una optimización y corresponde a la última etapa.
+- **Orden de creación de temporales y etiquetas** (de ello depende la numeración de los tests): una operación evalúa su
+  operando izquierdo, después el derecho y *después* pide el temporal del resultado; `&&` y `||` evalúan el izquierdo,
+  piden el temporal `r` y la etiqueta de fin y recién entonces evalúan el derecho; un `while` crea sus dos etiquetas
+  **antes** de generar la condición; un `if` las crea **después** de generar la condición.
+- **Se protegen las globales** (decisión 9): `protect` y la lógica de `gen_call` copian una global a un temporal cuando una
+  llamada posterior podría cambiarla. Por ejemplo, `x = g + h();` genera `t1 = @g` antes de `t2 = call h, 0`.
+- **El `ret` implícito se agrega siempre a los métodos `void`**, incluso si ya terminan con un `return;` explícito; el código
+  queda con dos `ret` seguidos, sin consecuencia. Simplifica el generador (no hay que analizar el flujo) y los métodos con
+  tipo no lo necesitan porque el análisis semántico garantiza que terminan en un `return`.
+- **Los `float` se rechazan en un recorrido previo** (`check_floats`), antes de generar nada: así se informan todas las
+  apariciones juntas y no se genera un programa a medias.
+- **Dependencia con la tabla de símbolos.** El generador usa los símbolos del AST (`sym`) para identificar variables. La tabla
+  tiene que estar viva mientras se genera; hoy `run_sem` la libera al terminar, y eso se resuelve en la integración.
+
+### Verificación del generador
+
+Con un programa temporal (que no se versiona) se compilaron 8 programas y se comparó el código intermedio generado con el
+escrito a mano, línea por línea: el ejemplo de la sección 2 (que sale **idéntico** al del documento), aritmética con `-`
+unario, `%` y precedencia, `||` con negación, `if/else`, llamadas con globales como argumentos y como operando izquierdo
+(la protección de la decisión 9), llamadas anidadas como argumento, recursión doble (`fib`), llamada a un método `void`
+y a uno con tipo como sentencia, variables con el mismo nombre en bloques distintos (`x`, `x.2`, `x.3`) frente a una
+global del mismo nombre (`@x`), y cortocircuito anidado (`true && (false || b) && !b`). El programa con `float` se
+rechaza con un error por cada aparición y las posiciones correctas. Sin errores de memoria con AddressSanitizer y UBSan.
+Los tests permanentes se agregan en la sección de testing.
+

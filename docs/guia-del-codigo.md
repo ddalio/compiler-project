@@ -36,6 +36,7 @@ Para estudiar el proyecto: qué hace cada archivo y cada función. Describe el c
 | `src/symtab.h`, `src/symtab.c` | Tabla de símbolos: pila de niveles con los símbolos (variables, parámetros y métodos) de cada scope. |
 | `src/semantic.h`, `src/semantic.c` | Análisis semántico: recorre el AST con la tabla de símbolos y verifica las reglas de la spec (hoy: nombres y alcance). |
 | `src/ir.h`, `src/ir.c` | Código intermedio (código de tres direcciones): operandos, instrucciones, métodos, impresión y liberación. |
+| `src/irgen.h`, `src/irgen.c` | Generador de código intermedio: recorre el AST anotado y produce el código de tres direcciones. |
 | `Makefile` | Compila todo y corre los tests. |
 | `tests/run_tests.sh` | Corre todos los casos de test. |
 
@@ -499,4 +500,55 @@ Funciones internas de `ir.c` (todas `static`):
 | `print_operand(out, o)` | Escribe un operando: constante, `@global`, local, `tN`, `LN` o nombre de método. |
 | `operator_text(op)` | Texto del operador de una instrucción aritmética, de comparación o de negación. |
 | `print_instr(out, in)` | Escribe una instrucción en su formato de texto. |
+
+## 15. `src/irgen.h` y `src/irgen.c`
+
+El **generador de código intermedio** recorre el AST anotado por el análisis semántico (con símbolos y tipos) y produce el
+programa en código de tres direcciones (`ir.h`): *reescritura del árbol* a una secuencia lineal de instrucciones. Sigue las
+decisiones de `etapa-4-codigo-intermedio.md`.
+
+La idea central es `gen_expr`: genera el código de una expresión y **devuelve el operando donde queda su valor** (una
+constante, una variable o un temporal). Quien la llama usa ese operando como argumento de la instrucción siguiente. Las
+sentencias de control (`if`, `while`) se convierten en etiquetas y saltos, y `&&` y `||` en saltos para cumplir el
+cortocircuito.
+
+`irgen.h` expone una sola función:
+
+| Función | Qué hace |
+|---------|----------|
+| `IrProgram *irgen_generate(const Ast *program, const char *filename)` | Genera el código del programa (la raíz `AST_PROGRAM`, ya analizada sin errores). Los símbolos que referencia el AST tienen que seguir vivos. Si el programa usa `float` informa `codegen error: type 'float' is not supported by the code generator` por cada aparición y devuelve `NULL`. Si no, devuelve el programa, que el que llama libera con `ir_program_free`. |
+
+`Gen` es el estado de la generación: el programa que se arma, el método actual y la correspondencia entre símbolos de la
+tabla y variables del código intermedio.
+
+Funciones internas de `irgen.c` (todas `static`):
+
+| Función | Qué hace |
+|---------|----------|
+| `xrealloc` | `realloc` que, si falla, informa y termina con código 2. |
+| `map_add(g, sym, var)`, `map_find(g, sym)` | La correspondencia símbolo → variable del código intermedio (un arreglo dinámico, con búsqueda lineal). `map_find` termina con error interno si el símbolo no está. |
+| `find_func(g, name)` | El método del código intermedio con ese nombre. Siempre existe: un método solo puede llamar a los declarados antes o a sí mismo. |
+| `emit(g, op, a, b, result)` | Agrega una instrucción al método actual. |
+| `has_call(e)` | Indica si una expresión contiene una llamada (que podría modificar una global). |
+| `is_global(o)` | Indica si el operando es una variable global. |
+| `protect(g, value, next_expr)` | Si `value` es una global y la expresión que se evalúa a continuación tiene una llamada, copia el valor a un temporal **antes** de evaluarla (decisión 9: orden de izquierda a derecha). Devuelve el operando a usar. |
+| `gen_expr(g, e)` | Genera una expresión y devuelve su operando: constante → `ir_const`; booleano → 0 o 1; identificador → su variable; llamada → `gen_call`; binaria → `gen_binary`; unaria → un temporal con `IR_NEG` o `IR_NOT`. |
+| `gen_binary(g, e)` | Aritmética y comparaciones: genera el operando izquierdo (protegiéndolo si hace falta), el derecho, pide un temporal y emite la operación. `&&` y `||` van a `gen_short_circuit`. |
+| `binary_op(op)` | Del operador del AST (`OP_ADD`, ...) a la instrucción (`IR_ADD`, ...). |
+| `gen_short_circuit(g, e)` | `a && b` / `a \|\| b`: evalúa `a`; crea el temporal `r` y le copia `a`; crea la etiqueta de fin; emite `jz r, fin` (`&&`) o `jnz r, fin` (`\|\|`); evalúa `b`, se lo copia a `r` y define la etiqueta. Así `b` solo se ejecuta si `a` no decide el resultado. |
+| `gen_call(g, call)` | Evalúa **todos** los argumentos de izquierda a derecha (protegiendo las globales si un argumento posterior tiene una llamada), emite los `param` consecutivos y el `call`. Si el método devuelve valor, el resultado queda en un temporal (aunque la llamada sea una sentencia). |
+| `gen_stmt(g, s)` | Una sentencia: asignación (`x = valor`), llamada, `if`, `while`, `return`, bloque o sentencia vacía. |
+| `gen_block(g, block)` | Declara las variables del bloque como locales del método (con nombre único) y genera sus sentencias. |
+| `gen_method(g, m)` | Agrega el método, declara sus parámetros, genera el cuerpo y, si es `void`, agrega el `ret` implícito. |
+| `check_floats(n, file)` | Recorre todo el AST e informa cada declaración, parámetro, método o literal de tipo `float` (decisión 12). Devuelve cuántos hay. |
+
+**Cómo se traducen las sentencias de control** (las etiquetas se crean en este orden, y de ello depende la numeración
+del `.ci`):
+
+| Sentencia | Código generado |
+|-----------|-----------------|
+| `if (c) A` | `c`; crear `Lfin`; `jz c, Lfin`; `A`; `Lfin:` |
+| `if (c) A else B` | `c`; crear `Lelse` y `Lfin`; `jz c, Lelse`; `A`; `jmp Lfin`; `Lelse:`; `B`; `Lfin:` |
+| `while (c) A` | crear `Linicio` y `Lfin`; `Linicio:`; `c`; `jz c, Lfin`; `A`; `jmp Linicio`; `Lfin:` |
+| `return e` / `return` | `e`; `ret e` / `ret` |
 
