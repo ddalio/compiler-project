@@ -349,7 +349,7 @@ if [ $NATIVE -eq 1 ]; then
         fi
     done
 
-    # Un programa grande: el assembly (mas de 1 MB) no entra de una vez en la
+    # Un programa grande: el assembly (unos 600 KB) no entra de una vez en la
     # tuberia que lee gcc, asi que prueba que se escribe completo.
     mkdir -p "$TMP/big"
     {
@@ -401,7 +401,7 @@ else
     bad "gcc que falla: informa el error y sale con codigo 2" "exit $status: $(cat "$TMP/stderr")"
 fi
 
-# Un gcc que termina sin leer el assembly (mas de 1 MB): escribir en la tuberia
+# Un gcc que termina sin leer el assembly (unos 600 KB): escribir en la tuberia
 # daria SIGPIPE; el compilador no debe morir por esa senal (codigo 141).
 {
     echo "int main() {"
@@ -568,6 +568,20 @@ if [ $status -eq 0 ] && [ "$(cat "$TMP/stdout")" = "3628800" ] && [ -f "$TMP/def
     ok "-run: escribe el .ci y ejecuta"
 else
     bad "-run: escribe el .ci y ejecuta" "exit $status; stdout: $(cat "$TMP/stdout"); archivos: $(ls "$TMP/default")"
+fi
+
+# -o no puede apuntar al propio fuente: lo pisaria con la salida (por el mismo
+# nombre o por otro nombre del mismo archivo, como un enlace).
+cp "$ROOT/tests/semantic/valid/recursion.ctds" "$TMP/default/own.ctds"
+ln -s own.ctds "$TMP/default/link.ctds"
+run "$TMP/default" -target sem -o own.ctds own.ctds
+same1=$status
+run "$TMP/default" -target sem -o link.ctds own.ctds
+if [ $same1 -eq 2 ] && [ $status -eq 2 ] && grep -qF "would overwrite the input file" "$TMP/stderr" &&
+   diff -q "$ROOT/tests/semantic/valid/recursion.ctds" "$TMP/default/own.ctds" > /dev/null; then
+    ok "-o no puede pisar el archivo fuente (ni con otro nombre)"
+else
+    bad "-o no puede pisar el archivo fuente (ni con otro nombre)" "exit $same1 y $status: $(cat "$TMP/stderr")"
 fi
 
 # -run solo vale con -target codinter.

@@ -47,6 +47,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -110,6 +111,18 @@ static int check_target(const char *target)
     return 0;
 }
 
+/* Indica si `a` y `b` son el mismo archivo (el mismo nombre, o dos nombres del
+ * mismo archivo: enlaces, rutas distintas). */
+static int same_file(const char *a, const char *b)
+{
+    struct stat sa, sb;
+
+    if (strcmp(a, b) == 0)
+        return 1;
+    return stat(a, &sa) == 0 && stat(b, &sb) == 0 &&
+           sa.st_dev == sb.st_dev && sa.st_ino == sb.st_ino;
+}
+
 /* Devuelve 1 si los argumentos son validos; 0 (ya informado) si no. */
 static int parse_args(int argc, char **argv, Options *opt)
 {
@@ -162,6 +175,11 @@ static int parse_args(int argc, char **argv, Options *opt)
         return 0;
     if (opt->run && strcmp(opt->target, "codinter") != 0) {
         fprintf(stderr, "c-tds: option '-run' requires -target codinter\n");
+        return 0;
+    }
+    if (opt->output && same_file(opt->output, opt->input)) {
+        fprintf(stderr, "c-tds: output file '%s' would overwrite the input file\n",
+                opt->output);
         return 0;
     }
     return 1;
