@@ -30,7 +30,7 @@ tutorial de generación de assembly de la cátedra) deja abiertos varios detalle
 |---|------|----------|
 | 4 | Conjunto de instrucciones | Ver la tabla de abajo. Son las mínimas para el lenguaje: copia, aritmética, comparación, negación lógica, etiquetas, saltos, parámetros, llamada y retorno. No hay instrucciones `AND` ni `OR` porque `&&` y `||` se implementan con saltos (decisión 8). |
 | 5 | Operandos | Un operando es una **constante entera** (`5`; `true` es `1` y `false` es `0`), una **variable** (global, local o parámetro) o un **temporal**. Las constantes pueden usarse directamente como operando (`t1 = x + 1`). El resultado de una instrucción es siempre una variable o un temporal. |
-| 6 | Nombres | Los **temporales** se llaman `t1`, `t2`, ... y las **etiquetas** `L1`, `L2`, ... Las variables **globales** se escriben con prefijo `@` (`@g`), por lo que nunca se confunden con una local o parámetro del mismo nombre. Los locales y parámetros llevan su nombre del fuente; si un método declara más de una variable con el mismo nombre (en bloques distintos, o una local que oculta a un parámetro), la primera conserva el nombre y las siguientes se llaman `x.2`, `x.3`, ... Así cada símbolo tiene un nombre único dentro de su método. |
+| 6 | Nombres | Los **temporales** se llaman `t1`, `t2`, ... y las **etiquetas** `L1`, `L2`, ... Las variables **globales** se escriben con prefijo `@` (`@g`), por lo que nunca se confunden con una local o parámetro del mismo nombre. Los locales y parámetros llevan su nombre del fuente; si un método declara más de una variable con el mismo nombre (en bloques distintos, o una local que oculta a un parámetro), la primera conserva el nombre y las siguientes se llaman `x.2`, `x.3`, ... Así cada símbolo tiene un nombre único dentro de su método. Una variable cuyo nombre tiene la forma de un temporal o de una etiqueta (`t1`, `L2`) también se renombra (`t1.2`, `L2.2`), para que en el texto del `.ci` no se confunda con ellos (se agregó al revisar la etapa: ver "Hallazgos del testing"). |
 | 7 | Temporales y etiquetas | Los temporales son **ilimitados** (registros virtuales) y no se reutilizan: cada resultado intermedio recibe un temporal nuevo. Se numeran desde `t1` **en cada método** y el método guarda cuántos usa (lo necesitará la etapa siguiente para calcular el tamaño del marco de pila). Las etiquetas se numeran desde `L1` en **todo el programa**, así son únicas sin importar el método. Reusar temporales es una optimización y corresponde a la última etapa. |
 
 Instrucciones y su texto en el archivo `.ci`:
@@ -322,9 +322,10 @@ función está en `guia-del-codigo.md`, sección 17.
 | `long_expression` | Una cadena de cinco sumas (muchos temporales) y una llamada con cinco argumentos. |
 | `spec_example_fixed` | El ejemplo de la spec con `main` corregido (`int main`): sin `ret` implícito y una etiqueta final. |
 | `nested_blocks` | Sentencias vacías y bloques anidados. |
+| `names_like_temporaries` | Variables llamadas `t1` y `L1`: se renombran `t1.2` y `L1.2` para no confundirse con un temporal o una etiqueta. |
 | `factorial_and_loop` | El ejemplo completo de la sección 2 (con `while` y `&&`). |
 
-**Programas ejecutados con `-run` (`tests/codinter/run/`, el `.expected` es el `stdout`):** 25 programas que verifican la
+**Programas ejecutados con `-run` (`tests/codinter/run/`, el `.expected` es el `stdout`):** 26 programas que verifican la
 semántica y no solo la forma del código: factorial de 10, Fibonacci de 20, suma 1..100, máximo común divisor, Collatz de 27
 (111 pasos), Ackermann(2, 3), cantidad de primos menores que 30, potencias, una recursión de 50000 niveles, bucles
 anidados, el **cortocircuito** (`short_circuit`: `inc()` solo se llama en dos de las cuatro combinaciones), el **orden de
@@ -345,12 +346,56 @@ con `-target codinter`; `-run` escribe el `.ci` y ejecuta; `-run` con `-target s
 `-run -debug` imprime primero el código y después el resultado; `-run` con un error semántico no genera ni ejecuta; y un
 programa con `float` sigue siendo válido con `-target sem`.
 
-**Regresión y memoria:** los 119 casos de las etapas 1 a 3 siguen pasando. En total `make test` ejecuta 181 casos y
+**Regresión y memoria:** los 119 casos de las etapas 1 a 3 siguen pasando. En total `make test` ejecuta 183 casos y
 `make test-asan` los mismos con AddressSanitizer y UBSan, sin errores de memoria. Se comprobó además que los tests detectan
 fallas: al cambiar a propósito una etiqueta en un `.expected` de código, un resultado en uno de `-run` y un mensaje en
 uno de error de ejecución, los tres casos fallaron.
 
-**Hallazgos del testing:** ningún `.expected` calculado a mano necesitó correcciones y no se encontraron errores en el
-generador ni en el intérprete. El caso del `ret` duplicado en un método `void` que termina con `return;`
+**Hallazgos del testing:** ningún `.expected` calculado a mano necesitó correcciones. Al revisar la etapa para cerrarla, un
+programa con variables llamadas `t1` y `L1` mostró un defecto de diseño en la decisión 6: el `.ci` salía como `t1 = 1 + 2`
+seguido de `t1 = t1`, con el temporal y la variable escritos igual (el programa se ejecutaba bien porque los operandos tienen
+tipo, pero el texto era ambiguo). Se corrigió en `ir.c` (un nombre con forma de temporal o etiqueta se trata como ocupado y la
+variable pasa a llamarse `t1.2` o `L1.2`) y se agregaron un test unitario (`test_names_like_temps_and_labels`) y dos
+programas (`names_like_temporaries` en `valid/` y en `run/`). El caso del `ret` duplicado en un método `void` que termina con `return;`
 (`calls_statements`) deja documentado ese comportamiento (decisión 11).
+
+## 6. Problemas conocidos
+
+- **`float` no está soportado en el código intermedio** (decisión 12). Un programa con números reales pasa el análisis
+  semántico (`-target sem`) pero se rechaza al generar código, y por lo tanto tampoco se puede ejecutar con `-run`.
+- **`-target codinter` como target por defecto y `-run` son extensiones o interpretaciones** de lo que pide la cátedra
+  (decisiones 17 y 18); conviene confirmarlas. El lenguaje no tiene entrada ni salida (el tutorial de assembly usa
+  funciones `extern` que no están en la gramática), así que lo único observable de `-run` es el valor que devuelve `main`;
+  un `boolean` sale como 1 o 0.
+- **El intérprete no tiene límite de instrucciones.** Un programa con un bucle infinito (por ejemplo, `while (true) { }`) no
+  termina; se comprobó que `-run` queda ejecutando hasta que se lo interrumpe.
+- **Profundidad máxima de llamadas.** El intérprete permite 100000 llamadas anidadas (`INTERP_MAX_DEPTH`): una recursión de
+  99998 niveles funciona y una de 100000 informa `runtime error: call stack overflow`, aunque sea finita. Es un límite
+  elegido, no de memoria.
+- **Expresiones larguísimas.** El generador es recursivo y usa más pila por nivel que las etapas anteriores: una suma
+  `a + a + ... + a` de 20000 términos se compila bien, pero con 30000 el programa se cae por desborde de la pila de C
+  (segmentation fault, código 139) en el target `codinter`. En el target `sem` el límite está cerca de los 70000 términos
+  (ver el problema equivalente en `etapa-3-semantico.md`). Se detectó generando esos programas con un script. No ocurre con
+  programas reales.
+- **El código no está optimizado** (a propósito; la optimización es la última etapa): cada asignación de una operación
+  genera un temporal y una copia (`t4 = a + b` y después `x = t4`), los temporales no se reutilizan (un método con muchas
+  operaciones tiene muchos temporales y, en la etapa siguiente, un marco de pila grande), se genera el código que está
+  después de un `return` y un método `void` que termina con `return;` tiene dos `ret` seguidos.
+- **Las variables locales sin inicializar valen 0 solo en el intérprete.** La spec no define su valor inicial; el
+  intérprete las pone en 0 para que la ejecución sea determinista, pero el código objeto de la etapa siguiente no tiene por
+  qué hacerlo. Un programa que dependa de leer una local sin asignar se comportaría distinto al compilarlo.
+- **Un método puede llamarse como un temporal.** Las variables que se parecen a un temporal o a una etiqueta se renombran,
+  pero un método llamado `t1` no puede renombrarse (su nombre es el que verá el ensamblador) y el `.ci` muestra
+  `t1 = call t1, 0`. No es ambiguo para el programa, que distingue el operando de `call`, pero es confuso de leer.
+- **La protección del orden de evaluación solo cubre variables globales** (decisión 9). Es suficiente porque los parámetros se
+  pasan por valor y no hay punteros ni asignaciones dentro de expresiones, pero deja de valer si el lenguaje se amplía con
+  alguno de ellos.
+- **El intérprete busca los métodos por nombre en cada llamada** (recorre la lista de métodos con `strcmp`). Con muy
+  pocos métodos no se nota; con cientos de métodos y millones de llamadas sería lento. Resolver el método una vez por
+  instrucción `call` sería la mejora.
+- **Heredados de las etapas anteriores:** `-2147483648` no se puede escribir como literal; los literales reales solo se
+  validan contra el rango de `double`; los caracteres no ASCII se informan byte por byte; los comentarios de bloque no se
+  anidan; el ejemplo de la spec trae una llave `}` de más y su `main` `void` devuelve valores (rechazado por la regla 6);
+  un solo error sintáctico por corrida; el análisis semántico solo corre si no hay errores léxicos ni sintácticos; la
+  búsqueda en la tabla de símbolos es lineal.
 

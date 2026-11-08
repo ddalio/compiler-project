@@ -2,7 +2,7 @@
 
 Taller de Diseño de Software (Cod. 3306) - DC - FCEFQyN - UNRC - 2026
 
-**Estado:** Etapas 1 (léxico), 2 (sintáctico) y 3 (semántico) terminadas. Etapa 4 (código intermedio) en desarrollo.
+**Estado:** Etapas 1 (léxico), 2 (sintáctico), 3 (semántico) y 4 (código intermedio, con intérprete) terminadas.
 
 Documentación: [etapa 1](docs/etapa-1-lexico.md), [etapa 2](docs/etapa-2-sintactico.md), [etapa 3](docs/etapa-3-semantico.md), [etapa 4](docs/etapa-4-codigo-intermedio.md). Para estudiar el código (qué hace cada archivo y cada función): [guía del código](docs/guia-del-codigo.md).
 

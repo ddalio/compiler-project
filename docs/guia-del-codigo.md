@@ -497,7 +497,7 @@ etiquetas creadas (`nlabels`). Los arreglos dinámicos empiezan con capacidad 8 
 | `void ir_program_free(IrProgram *prog)` | Libera el programa con todo lo que contiene (variables, métodos e instrucciones). Acepta `NULL`. |
 | `IrVar *ir_add_global(IrProgram *prog, const char *name)` | Agrega una global (el nombre se copia). |
 | `IrFunc *ir_add_func(IrProgram *prog, const char *name, int returns_value)` | Agrega un método al final del programa. |
-| `IrVar *ir_add_param(IrFunc *f, const char *base)`, `ir_add_local(f, base)` | Agregan un parámetro o una variable local. Si el método ya tiene una variable con ese nombre, la nueva se llama `base.2`, `base.3`, ...; así cada variable tiene un nombre **único dentro de su método**. |
+| `IrVar *ir_add_param(IrFunc *f, const char *base)`, `ir_add_local(f, base)` | Agregan un parámetro o una variable local. Si el método ya tiene una variable con ese nombre, o si el nombre se parece a un temporal o a una etiqueta (`t1`, `L2`), la nueva se llama `base.2`, `base.3`, ...; así cada variable tiene un nombre **único dentro de su método** y no se confunde con un temporal en el texto. |
 | `Operand ir_new_temp(IrFunc *f)` | Crea el temporal siguiente del método (`t1`, `t2`, ...). |
 | `Operand ir_new_label(IrProgram *prog)` | Crea la etiqueta siguiente del programa (`L1`, `L2`, ...), única en todo el programa. |
 | `void ir_emit(IrFunc *f, IrOp op, Operand a, Operand b, Operand result)` | Agrega una instrucción al final del método. |
@@ -511,7 +511,8 @@ Funciones internas de `ir.c` (todas `static`):
 | `GROW(arr, n, cap)` | Macro que agranda un arreglo dinámico cuando está lleno. |
 | `make_operand(kind, value)` | Arma un operando con todos sus campos inicializados. |
 | `var_new(name, is_global)` | Crea una variable con el nombre copiado. |
-| `name_taken(f, name)`, `unique_name(f, base)` | Detectan si un nombre ya lo usa un parámetro o una local del método y calculan el nombre único (`base`, `base.2`, ...). |
+| `looks_like_temp_or_label(name)` | Indica si un nombre tiene la forma de un temporal (`t1`, `t25`) o de una etiqueta (`L1`, `L10`): una `t` o una `L` seguida solo de dígitos. |
+| `name_taken(f, name)`, `unique_name(f, base)` | Detectan si un nombre no se puede usar para una variable del método (porque ya lo usa un parámetro o una local, o porque `looks_like_temp_or_label` lo rechaza) y calculan el nombre único (`base`, `base.2`, ...; una variable `t1` se llama `t1.2`). |
 | `vars_free(vars, n)` | Libera un arreglo de variables. |
 | `print_operand(out, o)` | Escribe un operando: constante, `@global`, local, `tN`, `LN` o nombre de método. |
 | `operator_text(op)` | Texto del operador de una instrucción aritmética, de comparación o de negación. |
@@ -626,6 +627,7 @@ esperado, mostrando ambos si difieren.
 | `test_temps_and_labels` | Los temporales se numeran **por método** (cada método empieza en `t1`) y las etiquetas **en todo el programa**; `ntemps` y `nlabels` cuentan bien. |
 | `test_variables` | Orden, `is_global`, `is_param` e `index` de globales, parámetros y locales. |
 | `test_unique_names` | `x`, `x.2`, `x.3`; un nombre ya ocupado (`x.2`) se resuelve como `x.2.2`; otro método no choca; una global del mismo nombre no cuenta. |
+| `test_names_like_temps_and_labels` | Una variable llamada `t1`, `L10` o `t25` se renombra (`t1.2`, `L10.2`, `t25.2`) para no confundirse con un temporal o una etiqueta; los nombres que solo se parecen (`t`, `L`, `T1`, `t1x`, `tx1`, `l1`) no se tocan. |
 | `test_emit_and_growth` | `ir_emit` guarda los campos; 1000 instrucciones y 100 variables obligan a crecer los arreglos sin perder datos. |
 | `test_print_all_instructions` | El texto exacto de **todas** las instrucciones (`MOVE`, `ADD`, `SUB`, `MUL`, `DIV`, `MOD`, `NEG`, `NOT`, `LT`, `GT`, `EQ`, `JZ`, `JNZ`, `JMP`, `LABEL`, `PARAM`, `CALL` con y sin resultado, `RET` con y sin valor), constantes negativas, globales con `@` y los encabezados. |
 | `test_print_layout` | Programa vacío, métodos vacíos y las líneas en blanco entre secciones. |
