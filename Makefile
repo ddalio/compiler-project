@@ -22,7 +22,7 @@ OBJS    := $(BUILD)/main.o $(BUILD)/tokens.o $(BUILD)/tree.o \
 # Tests unitarios (tests/unit): cada uno es un ejecutable que se arma en $(BUILD).
 # Usan todos los objetos del compilador menos main.o.
 LIBOBJS    := $(filter-out $(BUILD)/main.o,$(OBJS))
-UNIT_TESTS := $(BUILD)/test_symtab $(BUILD)/test_ast
+UNIT_TESTS := $(BUILD)/test_symtab $(BUILD)/test_ast $(BUILD)/test_ir $(BUILD)/test_interp
 
 .PHONY: all test test-asan clean
 
@@ -61,6 +61,13 @@ $(BUILD):
 $(BUILD)/test_symtab: tests/unit/test_symtab.c $(BUILD)/symtab.o $(BUILD)/types.o \
                       src/symtab.h src/types.h | $(BUILD)
 	$(CC) $(CFLAGS) tests/unit/test_symtab.c $(BUILD)/symtab.o $(BUILD)/types.o -o $@
+
+$(BUILD)/test_ir: tests/unit/test_ir.c $(BUILD)/ir.o src/ir.h | $(BUILD)
+	$(CC) $(CFLAGS) tests/unit/test_ir.c $(BUILD)/ir.o -o $@
+
+$(BUILD)/test_interp: tests/unit/test_interp.c $(BUILD)/interp.o $(BUILD)/ir.o \
+                      src/interp.h src/ir.h | $(BUILD)
+	$(CC) $(CFLAGS) tests/unit/test_interp.c $(BUILD)/interp.o $(BUILD)/ir.o -o $@
 
 $(BUILD)/test_ast: tests/unit/test_ast.c $(LIBOBJS) | $(BUILD)
 	$(CC) $(CFLAGS) tests/unit/test_ast.c $(LIBOBJS) $(LDLIBS) -o $@
