@@ -95,18 +95,20 @@ IrProgram *ir_program_new(void)
     return prog;
 }
 
-static IrVar *var_new(const char *name, int is_global)
+static IrVar *var_new(const char *name, int is_global, int is_param, int index)
 {
     IrVar *v = xmalloc(sizeof *v);
 
     v->name = xstrdup(name);
     v->is_global = is_global;
+    v->is_param = is_param;
+    v->index = index;
     return v;
 }
 
 IrVar *ir_add_global(IrProgram *prog, const char *name)
 {
-    IrVar *v = var_new(name, 1);
+    IrVar *v = var_new(name, 1, 0, prog->nglobals);
 
     GROW(prog->globals, prog->nglobals, prog->cap_globals);
     prog->globals[prog->nglobals++] = v;
@@ -166,7 +168,7 @@ static char *unique_name(const IrFunc *f, const char *base)
 IrVar *ir_add_param(IrFunc *f, const char *base)
 {
     char *name = unique_name(f, base);
-    IrVar *v = var_new(name, 0);
+    IrVar *v = var_new(name, 0, 1, f->nparams);
 
     free(name);
     GROW(f->params, f->nparams, f->cap_params);
@@ -177,7 +179,7 @@ IrVar *ir_add_param(IrFunc *f, const char *base)
 IrVar *ir_add_local(IrFunc *f, const char *base)
 {
     char *name = unique_name(f, base);
-    IrVar *v = var_new(name, 0);
+    IrVar *v = var_new(name, 0, 0, f->nlocals);
 
     free(name);
     GROW(f->locals, f->nlocals, f->cap_locals);

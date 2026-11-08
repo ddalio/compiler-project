@@ -49,6 +49,11 @@ typedef enum {
 typedef struct IrVar {
     char *name;
     int is_global;      /* se escribe con prefijo '@' */
+    int is_param;       /* parametro de su metodo (si no es global ni parametro,
+                         * es una variable local) */
+    int index;          /* posicion dentro de su lista: en las globales del
+                         * programa, en los parametros del metodo o en sus
+                         * locales (empiezan en 0) */
 } IrVar;
 
 typedef struct {
