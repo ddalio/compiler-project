@@ -1,0 +1,49 @@
+# c-tds: loop.ctds
+        .text
+        .globl  main
+main:                           # func main()
+        pushq   %rbp
+        movq    %rsp, %rbp
+        subq    $48, %rsp       # 5 posiciones = 40 bytes -> 48
+        movl    $0, -8(%rbp)    # i = 0
+        movl    $0, -16(%rbp)   # s = 0
+        # i = 0
+        movl    $0, %r10d
+        movl    %r10d, -8(%rbp)
+        # s = 0
+        movl    $0, %r10d
+        movl    %r10d, -16(%rbp)
+.L1:
+        # t1 = i < 3
+        movl    -8(%rbp), %r10d
+        cmpl    $3, %r10d
+        setl    %r11b
+        movzbl  %r11b, %r11d
+        movl    %r11d, -24(%rbp)
+        # jz t1, L2
+        movl    -24(%rbp), %r10d
+        testl   %r10d, %r10d
+        je      .L2
+        # t2 = s + i
+        movl    -16(%rbp), %r10d
+        addl    -8(%rbp), %r10d
+        movl    %r10d, -32(%rbp)
+        # s = t2
+        movl    -32(%rbp), %r10d
+        movl    %r10d, -16(%rbp)
+        # t3 = i + 1
+        movl    -8(%rbp), %r10d
+        addl    $1, %r10d
+        movl    %r10d, -40(%rbp)
+        # i = t3
+        movl    -40(%rbp), %r10d
+        movl    %r10d, -8(%rbp)
+        # jmp L1
+        jmp     .L1
+.L2:
+        # ret s
+        movl    -16(%rbp), %eax
+        leave
+        ret
+
+        .section .note.GNU-stack,"",@progbits

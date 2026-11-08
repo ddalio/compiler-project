@@ -1,0 +1,10 @@
+int g;
+boolean inc() { g = g + 1; return true; }
+int main() {
+  boolean r;
+  r = false && inc();
+  r = true || inc();
+  r = true && inc();
+  r = false || inc();
+  return g;
+}

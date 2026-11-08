@@ -1,0 +1,3 @@
+int printf(int x) { return x + 1; }
+int exit(int x) { return x * 2; }
+int main() { return printf(exit(5)); }

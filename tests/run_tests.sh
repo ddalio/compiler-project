@@ -9,6 +9,15 @@
 #                                    (codigo de salida 0, nada por stdout/stderr)
 #   tests/scanner/errors/*.ctds   -> <caso>.expected = stderr esperado
 #                                    (codigo de salida 1, sin archivo de salida)
+# Etapa 5 (codigo objeto):
+#   tests/assembly/*.ctds   -> <caso>.expected = assembly esperado (-target assembly)
+#   tests/native/*.ctds     -> <caso>.expected = codigo de salida del ejecutable
+#   tests/codinter/run/*.ctds tambien se compilan a ejecutable: su codigo de
+#       salida debe ser el valor que devuelve el interprete, modulo 256.
+#   Los tests que arman un ejecutable necesitan Linux x86-64 y gcc; si no estan
+#   se omiten con un aviso.
+#   tests/unit/test_x86gen.c -> unitario del generador de assembly.
+#
 # Etapa 4 (codigo intermedio):
 #   tests/codinter/valid/*.ctds     -> <caso>.expected = contenido esperado del .ci
 #   tests/codinter/errors/*.ctds    -> <caso>.expected = stderr esperado (codigo 1,
@@ -45,6 +54,13 @@ trap 'rm -rf "$TMP"' EXIT
 
 pass=0
 fail=0
+
+# Los tests de extremo a extremo (compilar a ejecutable y correrlo) necesitan
+# Linux x86-64 y gcc.
+NATIVE=0
+if [ "$(uname -s)" = "Linux" ] && [ "$(uname -m)" = "x86_64" ] && command -v gcc > /dev/null; then
+    NATIVE=1
+fi
 
 ok()  { pass=$((pass + 1)); echo "  ok    $1"; }
 bad() { fail=$((fail + 1)); echo "  FAIL  $1"; [ -n "$2" ] && echo "$2" | sed 's/^/        /'; }
@@ -145,7 +161,7 @@ done
 
 echo "== Tests unitarios (tabla de simbolos, tipos, AST, codigo intermedio e interprete) =="
 if [ -n "$UNIT_DIR" ]; then
-    for unit in test_symtab test_ast test_ir test_interp; do
+    for unit in test_symtab test_ast test_ir test_interp test_x86gen; do
         if [ ! -x "$UNIT_DIR/$unit" ]; then
             bad "$unit" "no se encuentra $UNIT_DIR/$unit (correr 'make test')"
         elif "$UNIT_DIR/$unit" > "$TMP/unit.out" 2>&1; then
@@ -269,6 +285,146 @@ for src in "$ROOT"/tests/codinter/run_errors/*.ctds; do
         ok "$name"
     fi
 done
+
+echo "== Assembly: casos con el assembly esperado (-target assembly) =="
+for src in "$ROOT"/tests/assembly/*.ctds; do
+    name="$(basename "$src" .ctds)"
+    expected="${src%.ctds}.expected"
+    rm -f "$TMP/out.ass"
+    run "$(dirname "$src")" -target assembly -o "$TMP/out.ass" "$name.ctds"
+    if [ $status -ne 0 ]; then
+        bad "$name" "exit code $status (se esperaba 0): $(cat "$TMP/stderr")"
+    elif [ -s "$TMP/stdout" ] || [ -s "$TMP/stderr" ]; then
+        bad "$name" "sin -debug no debe imprimirse nada"
+    elif ! diff -u "$expected" "$TMP/out.ass" > "$TMP/diff"; then
+        bad "$name" "$(cat "$TMP/diff")"
+    else
+        # Con -debug el mismo assembly sale por stdout.
+        run "$(dirname "$src")" -target assembly -debug -o "$TMP/out2.ass" "$name.ctds"
+        if [ $status -eq 0 ] && diff -u "$expected" "$TMP/stdout" > "$TMP/diff"; then
+            ok "$name"
+        else
+            bad "$name (-debug)" "exit $status $(cat "$TMP/diff")"
+        fi
+    fi
+done
+
+echo "== Ejecutables: los programas del interprete, compilados a codigo nativo =="
+if [ $NATIVE -eq 1 ]; then
+    mkdir -p "$TMP/native"
+    for src in "$ROOT"/tests/codinter/run/*.ctds; do
+        name="$(basename "$src" .ctds)"
+        value="$(cat "${src%.ctds}.expected")"
+        [ -z "$value" ] && value=0
+        want=$(( ((value % 256) + 256) % 256 ))
+        run "$(dirname "$src")" -o "$TMP/native/$name" "$name.ctds"
+        if [ $status -ne 0 ]; then
+            bad "$name" "no se pudo compilar (exit $status): $(cat "$TMP/stderr")"
+            continue
+        fi
+        "$TMP/native/$name" > /dev/null 2>&1
+        got=$?
+        if [ $got -eq $want ]; then
+            ok "$name (sale con $got = $value mod 256)"
+        else
+            bad "$name" "el ejecutable salio con $got y el interprete da $value (mod 256 = $want)"
+        fi
+    done
+
+    echo "== Ejecutables: casos propios de la generacion de codigo =="
+    for src in "$ROOT"/tests/native/*.ctds; do
+        name="$(basename "$src" .ctds)"
+        want="$(cat "${src%.ctds}.expected")"
+        run "$(dirname "$src")" -o "$TMP/native/n_$name" "$name.ctds"
+        if [ $status -ne 0 ]; then
+            bad "$name" "no se pudo compilar (exit $status): $(cat "$TMP/stderr")"
+            continue
+        fi
+        "$TMP/native/n_$name" > /dev/null 2>&1
+        got=$?
+        if [ $got -eq "$want" ]; then
+            ok "$name (sale con $got)"
+        else
+            bad "$name" "el ejecutable salio con $got y se esperaba $want"
+        fi
+    done
+
+    # Un programa grande: el assembly (mas de 1 MB) no entra de una vez en la
+    # tuberia que lee gcc, asi que prueba que se escribe completo.
+    mkdir -p "$TMP/big"
+    {
+        echo "int main() {"
+        echo "  int x;"
+        echo "  x = 0;"
+        for i in $(seq 1 3000); do echo "  x = x + 1;"; done
+        echo "  return x;"
+        echo "}"
+    } > "$TMP/big/big.ctds"
+    run "$TMP/big" big.ctds
+    if [ $status -eq 0 ]; then
+        "$TMP/big/big.out" > /dev/null 2>&1
+        got=$?
+        if [ $got -eq 184 ]; then
+            ok "programa grande: 3000 sentencias (sale con 3000 mod 256 = 184)"
+        else
+            bad "programa grande" "el ejecutable salio con $got y se esperaba 184"
+        fi
+    else
+        bad "programa grande" "no se pudo compilar (exit $status): $(cat "$TMP/stderr")"
+    fi
+else
+    echo "  (omitidos: necesitan Linux x86-64 y gcc)"
+fi
+
+echo "== Errores de herramientas (gcc ausente o que falla) =="
+# run_path <dir> <PATH> <args...>: como run, pero con otro PATH.
+run_path() {
+    local dir="$1" newpath="$2"; shift 2
+    (cd "$dir" && PATH="$newpath" "$BIN" "$@") > "$TMP/stdout" 2> "$TMP/stderr"
+    status=$?
+}
+mkdir -p "$TMP/emptybin" "$TMP/fakebin"
+printf '#!/bin/sh\nexit 1\n' > "$TMP/fakebin/gcc"
+chmod +x "$TMP/fakebin/gcc"
+
+run_path "$ROOT/tests/native" "$TMP/emptybin" -o "$TMP/never.out" method_without_variables.ctds
+if [ $status -eq 2 ] && grep -qF "cannot run 'gcc'" "$TMP/stderr" && [ ! -e "$TMP/never.out" ]; then
+    ok "sin gcc: informa el error y sale con codigo 2"
+else
+    bad "sin gcc: informa el error y sale con codigo 2" "exit $status: $(cat "$TMP/stderr")"
+fi
+
+run_path "$ROOT/tests/native" "$TMP/fakebin" -o "$TMP/never.out" method_without_variables.ctds
+if [ $status -eq 2 ] && grep -qF "gcc failed" "$TMP/stderr"; then
+    ok "gcc que falla: informa el error y sale con codigo 2"
+else
+    bad "gcc que falla: informa el error y sale con codigo 2" "exit $status: $(cat "$TMP/stderr")"
+fi
+
+# Un gcc que termina sin leer el assembly (mas de 1 MB): escribir en la tuberia
+# daria SIGPIPE; el compilador no debe morir por esa senal (codigo 141).
+{
+    echo "int main() {"
+    echo "  int x;"
+    echo "  x = 0;"
+    for i in $(seq 1 3000); do echo "  x = x + 1;"; done
+    echo "  return x;"
+    echo "}"
+} > "$TMP/big_fake.ctds"
+run_path "$TMP" "$TMP/fakebin" -o "$TMP/never.out" big_fake.ctds
+if [ $status -eq 2 ] && grep -qF "gcc failed" "$TMP/stderr"; then
+    ok "gcc que no lee la entrada: sin SIGPIPE, sale con codigo 2"
+else
+    bad "gcc que no lee la entrada: sin SIGPIPE, sale con codigo 2" "exit $status: $(cat "$TMP/stderr")"
+fi
+
+# -target assembly no necesita gcc.
+run_path "$ROOT/tests/native" "$TMP/emptybin" -target assembly -o "$TMP/noexe.ass" method_without_variables.ctds
+if [ $status -eq 0 ] && [ -f "$TMP/noexe.ass" ]; then
+    ok "-target assembly funciona sin gcc"
+else
+    bad "-target assembly funciona sin gcc" "exit $status: $(cat "$TMP/stderr")"
+fi
 
 echo "== Interfaz de linea de comandos =="
 

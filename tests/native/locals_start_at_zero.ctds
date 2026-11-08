@@ -1,0 +1,3 @@
+int f() { int x; return x; }
+int g() { int y; y = 77; return y; }
+int main() { g(); return f(); }

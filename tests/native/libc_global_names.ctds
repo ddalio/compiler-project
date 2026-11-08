@@ -1,0 +1,6 @@
+int puts;
+int malloc;
+void main() {
+  puts = 3;
+  malloc = puts + 1;
+}

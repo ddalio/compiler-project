@@ -1,0 +1,4 @@
+int a(int n) { return n + 1; }
+int b(int n) { return a(n) * 2; }
+int c(int n) { return b(n) + a(n); }
+int main() { return c(4); }

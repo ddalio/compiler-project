@@ -1,0 +1,41 @@
+# c-tds: add.ctds
+        .data
+ctds_g: .long   0
+
+        .text
+ctds_add:                       # func add(a, b)
+        pushq   %rbp
+        movq    %rsp, %rbp
+        subq    $32, %rsp       # 3 posiciones = 24 bytes -> 32
+        movl    %edi, -8(%rbp)  # a
+        movl    %esi, -16(%rbp) # b
+        # t1 = a + b
+        movl    -8(%rbp), %r10d
+        addl    -16(%rbp), %r10d
+        movl    %r10d, -24(%rbp)
+        # ret t1
+        movl    -24(%rbp), %eax
+        leave
+        ret
+
+        .globl  main
+main:                           # func main()
+        pushq   %rbp
+        movq    %rsp, %rbp
+        subq    $16, %rsp       # 1 posicion = 8 bytes -> 16
+        # param 3
+        # param 4
+        # t1 = call add, 2
+        movl    $3, %edi
+        movl    $4, %esi
+        call    ctds_add
+        movl    %eax, -8(%rbp)
+        # @g = t1
+        movl    -8(%rbp), %r10d
+        movl    %r10d, ctds_g(%rip)
+        # ret
+        movl    $0, %eax
+        leave
+        ret
+
+        .section .note.GNU-stack,"",@progbits

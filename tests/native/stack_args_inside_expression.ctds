@@ -1,0 +1,3 @@
+int s7(int a, int b, int c, int d, int e, int f, int g) { return a + b + c + d + e + f + g; }
+int id(int x) { return x; }
+int main() { return id(s7(1, 2, 3, 4, 5, 6, 7)) + id(8); }

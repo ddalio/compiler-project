@@ -1,0 +1,5 @@
+int r(int n, int a, int b, int c, int d, int e, int f, int g, int h) {
+  if (n == 0) { return a + h; }
+  return r(n - 1, a + 1, b, c, d, e, f, g, h + 2);
+}
+int main() { return r(10, 0, 0, 0, 0, 0, 0, 0, 0); }

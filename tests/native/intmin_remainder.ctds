@@ -1,0 +1,5 @@
+int main() {
+  int m;
+  m = -2147483647 - 1;
+  return m % -1 + 9;
+}
