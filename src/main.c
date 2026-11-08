@@ -1,16 +1,19 @@
 /*
  * main.c - Interfaz de linea de comandos de c-tds
- *          (Etapas 1 a 4: analisis lexico, sintactico, semantico y generacion
- *          de codigo intermedio).
+ *          (Etapas 1 a 5: analisis lexico, sintactico, semantico, generacion de
+ *          codigo intermedio y de codigo objeto).
  *
  *   c-tds [opcion] nombreArchivo.ctds
  *
- *   -o <salida>      nombre del archivo de salida
- *   -target <etapa>  etapa hasta la que se compila: scan, parse, sem o codinter
- *                    (por defecto codinter, la etapa actual)
+ *   -o <salida>      nombre del archivo de salida (el ejecutable, o el archivo
+ *                    de la etapa si se da -target)
+ *   -target <etapa>  detiene la compilacion en una etapa: scan, parse, sem,
+ *                    codinter o assembly. Sin -target se hace la compilacion
+ *                    completa y se genera el ejecutable <nombre>.out
  *   -debug           imprime informacion de depuracion
- *   -run             con -target codinter: ejecuta el codigo intermedio generado
- *                    desde main e imprime el valor que devuelve (si devuelve uno)
+ *   -run             ejecuta el codigo intermedio generado desde main e imprime
+ *                    el valor que devuelve (si devuelve uno); implica
+ *                    -target codinter y no se puede combinar con otro target
  *
  * Salida de cada etapa:
  *   scan   archivo <nombre>.lex con un token por linea:
@@ -26,17 +29,27 @@
  *          simbolos por stderr.
  *   codinter  archivo <nombre>.ci con el codigo de tres direcciones (ver ir.h).
  *          -debug imprime ese codigo por stdout.
+ *   assembly  archivo <nombre>.ass con el assembly x86-64 (ver x86gen.h).
+ *          -debug imprime ese assembly por stdout.
+ *   (sin -target)  ejecutable <nombre>.out: el assembly se le pasa a gcc, que
+ *          lo ensambla y lo enlaza con la biblioteca de C. El assembly no se
+ *          guarda. -debug lo imprime por stdout.
  *
  * Si hay errores no se genera el archivo de salida.
- * Codigos de salida: 0 = ok, 1 = errores lexicos, sintacticos o semanticos,
- *                    2 = error de uso o de E/S.
+ * Codigos de salida: 0 = ok, 1 = errores en el programa fuente (lexicos,
+ *                    sintacticos, semanticos o de generacion de codigo),
+ *                    2 = error de uso, de E/S o de las herramientas (gcc).
  */
 #define _POSIX_C_SOURCE 200809L
 
 #include <errno.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 #include "ast.h"
 #include "interp.h"
@@ -47,6 +60,7 @@
 #include "semantic.h"
 #include "symtab.h"
 #include "tree.h"
+#include "x86gen.h"
 
 #define SOURCE_EXT ".ctds"
 #define EXIT_OK        0
@@ -66,12 +80,13 @@ static void usage(FILE *out)
     fprintf(out,
         "Usage: c-tds [options] file.ctds\n"
         "Options:\n"
-        "  -o <output>      write the output to <output>\n"
-        "  -target <stage>  compile up to <stage> (available: scan, parse, sem,\n"
-        "                   codinter; default: codinter)\n"
+        "  -o <output>      write the output (the executable, or the stage file\n"
+        "                   when -target is given) to <output>\n"
+        "  -target <stage>  stop at <stage>: scan, parse, sem, codinter or assembly.\n"
+        "                   Without it the executable <file>.out is built\n"
         "  -debug           print debugging information\n"
-        "  -run             run the generated intermediate code (target codinter)\n"
-        "                   and print the value returned by main\n");
+        "  -run             run the generated intermediate code and print the value\n"
+        "                   returned by main (implies -target codinter)\n");
 }
 
 static int has_extension(const char *name, const char *ext)
@@ -80,19 +95,18 @@ static int has_extension(const char *name, const char *ext)
     return n > e && strcmp(name + n - e, ext) == 0;
 }
 
-/* Etapas que define la catedra (scan, parse, codinter, assembly) mas "sem",
- * el analisis semantico, que la catedra no lista como target pero tiene su
- * propia extension de salida (.sem). Por ahora estan implementadas scan, parse,
- * sem y codinter. */
+/* Etapas en las que se puede detener la compilacion: las de la catedra (scan,
+ * parse, codinter, assembly) mas "sem", el analisis semantico, que la catedra no
+ * lista como target pero tiene su propia extension de salida (.sem). */
 static int check_target(const char *target)
 {
-    if (strcmp(target, "scan") == 0 || strcmp(target, "parse") == 0 ||
-        strcmp(target, "sem") == 0 || strcmp(target, "codinter") == 0)
-        return 1;
-    if (strcmp(target, "assembly") == 0)
-        fprintf(stderr, "c-tds: target '%s' is not available yet\n", target);
-    else
-        fprintf(stderr, "c-tds: unknown target '%s'\n", target);
+    static const char *const known[] = { "scan", "parse", "sem", "codinter",
+                                         "assembly" };
+
+    for (size_t i = 0; i < sizeof known / sizeof known[0]; i++)
+        if (strcmp(target, known[i]) == 0)
+            return 1;
+    fprintf(stderr, "c-tds: unknown target '%s'\n", target);
     return 0;
 }
 
@@ -101,7 +115,7 @@ static int parse_args(int argc, char **argv, Options *opt)
 {
     opt->input = NULL;
     opt->output = NULL;
-    opt->target = "codinter";       /* por defecto: hasta la etapa actual */
+    opt->target = NULL;             /* sin -target: se genera el ejecutable */
     opt->debug = 0;
     opt->run = 0;
 
@@ -142,7 +156,9 @@ static int parse_args(int argc, char **argv, Options *opt)
                 opt->input, SOURCE_EXT);
         return 0;
     }
-    if (!check_target(opt->target))
+    if (!opt->target && opt->run)
+        opt->target = "codinter";       /* -run implica -target codinter */
+    if (opt->target && !check_target(opt->target))
         return 0;
     if (opt->run && strcmp(opt->target, "codinter") != 0) {
         fprintf(stderr, "c-tds: option '-run' requires -target codinter\n");
@@ -399,32 +415,178 @@ static int run_program(const IrProgram *prog)
     return EXIT_OK;
 }
 
+/* Front end completo y generacion de codigo intermedio. Devuelve EXIT_OK si el
+ * programa no tiene ningun error (lexico, sintactico, semantico ni de
+ * generacion): entonces `f` y *prog siguen vivos y el que llama debe liberarlos
+ * (front_free e ir_program_free). Si no, devuelve el codigo de salida y no deja
+ * nada que liberar. */
+static int build_ir(const Options *opt, Front *f, IrProgram **prog)
+{
+    int status = run_front(opt, 0, f);
+
+    *prog = NULL;
+    if (status != EXIT_OK)
+        return status;
+    if (f->errors > 0) {
+        front_free(f);
+        return EXIT_SRC_ERROR;
+    }
+    *prog = irgen_generate(f->ast, opt->input);
+    if (!*prog) {                       /* p. ej. usa float (ya informado) */
+        front_free(f);
+        return EXIT_SRC_ERROR;
+    }
+    return EXIT_OK;
+}
+
 /* Etapa codinter: front end completo y generacion de codigo intermedio; escribe
  * el codigo de tres direcciones en el .ci. El codigo solo se genera si el
  * programa no tiene ningun error (lexico, sintactico ni semantico). */
 static int run_codinter(const Options *opt)
 {
     Front f;
-    int status = run_front(opt, 0, &f);
+    IrProgram *prog;
+    int status = build_ir(opt, &f, &prog);
 
     if (status != EXIT_OK)
         return status;
-    if (f.errors > 0) {
-        status = EXIT_SRC_ERROR;
-    } else {
-        IrProgram *prog = irgen_generate(f.ast, opt->input);
+    status = write_output(opt, ".ci", print_ir_cb, prog);
+    if (opt->debug)
+        ir_print(stdout, prog);
+    if (opt->run && status == EXIT_OK)
+        status = run_program(prog);
+    ir_program_free(prog);
+    front_free(&f);
+    return status;
+}
 
-        if (!prog) {
-            status = EXIT_SRC_ERROR;    /* p. ej. usa float (ya informado) */
-        } else {
-            status = write_output(opt, ".ci", print_ir_cb, prog);
-            if (opt->debug)
-                ir_print(stdout, prog);
-            if (opt->run && status == EXIT_OK)
-                status = run_program(prog);
-            ir_program_free(prog);
-        }
+/* Genera el assembly del programa en una cadena en memoria (que hay que liberar
+ * con free) y, con -debug, tambien lo imprime por stdout. */
+static char *make_assembly(const Options *opt, const IrProgram *prog, size_t *len)
+{
+    char *buf = NULL;
+    FILE *mem = open_memstream(&buf, len);
+
+    if (!mem) {
+        perror("c-tds");
+        exit(EXIT_USAGE);
     }
+    x86_generate(mem, prog, opt->input);
+    fclose(mem);
+    if (opt->debug)
+        fwrite(buf, 1, *len, stdout);
+    return buf;
+}
+
+/* Etapa assembly: escribe el assembly x86-64 en el .ass. */
+static int run_assembly(const Options *opt)
+{
+    Front f;
+    IrProgram *prog;
+    size_t len;
+    char *buf;
+    char *path;
+    FILE *out;
+    int status = build_ir(opt, &f, &prog);
+
+    if (status != EXIT_OK)
+        return status;
+    buf = make_assembly(opt, prog, &len);
+    path = output_path(opt, ".ass");
+    out = fopen(path, "w");
+    if (!out || fwrite(buf, 1, len, out) != len || fclose(out) != 0)
+        status = write_failed(path);
+    free(path);
+    free(buf);
+    ir_program_free(prog);
+    front_free(&f);
+    return status;
+}
+
+/* Escribe todo `buf` en el descriptor `fd`. Devuelve 0 si pudo. */
+static int write_all(int fd, const char *buf, size_t len)
+{
+    while (len > 0) {
+        ssize_t n = write(fd, buf, len);
+
+        if (n < 0) {
+            if (errno == EINTR)
+                continue;
+            return -1;
+        }
+        buf += n;
+        len -= (size_t)n;
+    }
+    return 0;
+}
+
+/* Arma el ejecutable `exe_path` a partir del assembly: lanza
+ * "gcc -x assembler - -o exe_path" (con fork y execvp, sin shell) y le pasa el
+ * assembly por su entrada estandar. gcc ensambla y enlaza con la biblioteca de
+ * C. Devuelve EXIT_OK o EXIT_USAGE (error de herramientas, ya informado). */
+static int build_executable(const char *assembly, size_t len, const char *exe_path)
+{
+    int fds[2], wstatus;
+    pid_t pid;
+    void (*old_sigpipe)(int);
+    int write_failed_flag;
+
+    if (pipe(fds) != 0) {
+        perror("c-tds");
+        return EXIT_USAGE;
+    }
+    pid = fork();
+    if (pid < 0) {
+        perror("c-tds");
+        close(fds[0]);
+        close(fds[1]);
+        return EXIT_USAGE;
+    }
+    if (pid == 0) {                         /* hijo: gcc lee el assembly de stdin */
+        dup2(fds[0], STDIN_FILENO);
+        close(fds[0]);
+        close(fds[1]);
+        execlp("gcc", "gcc", "-x", "assembler", "-", "-o", exe_path, (char *)NULL);
+        _exit(127);                         /* no se pudo ejecutar gcc */
+    }
+    close(fds[0]);
+    old_sigpipe = signal(SIGPIPE, SIG_IGN); /* si gcc termina antes, no morir */
+    write_failed_flag = write_all(fds[1], assembly, len) != 0;
+    close(fds[1]);
+    signal(SIGPIPE, old_sigpipe);
+    while (waitpid(pid, &wstatus, 0) < 0 && errno == EINTR)
+        ;
+
+    if (WIFEXITED(wstatus) && WEXITSTATUS(wstatus) == 127) {
+        fprintf(stderr, "c-tds: cannot run 'gcc': is it installed? "
+                "(needed to build the executable; use -target assembly to "
+                "get the assembly only)\n");
+        return EXIT_USAGE;
+    }
+    if (!WIFEXITED(wstatus) || WEXITSTATUS(wstatus) != 0 || write_failed_flag) {
+        fprintf(stderr, "c-tds: gcc failed to assemble and link the program\n");
+        return EXIT_USAGE;
+    }
+    return EXIT_OK;
+}
+
+/* Sin -target: compilacion completa, hasta el ejecutable <nombre>.out. */
+static int run_executable(const Options *opt)
+{
+    Front f;
+    IrProgram *prog;
+    size_t len;
+    char *buf, *path;
+    int status = build_ir(opt, &f, &prog);
+
+    if (status != EXIT_OK)
+        return status;
+    buf = make_assembly(opt, prog, &len);
+    path = output_path(opt, ".out");
+    status = build_executable(buf, len, path);
+    free(path);
+    free(buf);
+    ir_program_free(prog);
     front_free(&f);
     return status;
 }
@@ -437,11 +599,15 @@ int main(int argc, char **argv)
         usage(stderr);
         return EXIT_USAGE;
     }
+    if (!opt.target)
+        return run_executable(&opt);
     if (strcmp(opt.target, "scan") == 0)
         return run_scan(&opt);
     if (strcmp(opt.target, "parse") == 0)
         return run_parse(&opt);
     if (strcmp(opt.target, "sem") == 0)
         return run_sem(&opt);
-    return run_codinter(&opt);
+    if (strcmp(opt.target, "codinter") == 0)
+        return run_codinter(&opt);
+    return run_assembly(&opt);
 }

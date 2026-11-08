@@ -293,7 +293,6 @@ cli "opcion desconocida"         2 "unknown option '-foo'"    -- -foo keywords.c
 cli "dos archivos de entrada"    2 "only one input file"      -- keywords.ctds literals.ctds
 cli "-o sin argumento"           2 "requires an argument"     -- keywords.ctds -o
 cli "-target sin argumento"      2 "requires an argument"     -- keywords.ctds -target
-cli "-target no disponible"      2 "not available yet"        -- -target assembly keywords.ctds
 cli "-target desconocido"        2 "unknown target 'foo'"     -- -target foo keywords.ctds
 
 # Nombre de salida por defecto: <fuente>.lex junto al fuente.
@@ -387,16 +386,16 @@ else
     bad "-target parse no ejecuta el analisis semantico" "exit $status: $(cat "$TMP/stderr")"
 fi
 
-# Etapa codinter: el target por defecto genera <fuente>.ci junto al fuente (y no
-# los archivos de las otras etapas).
+# Etapa codinter: -target codinter genera <fuente>.ci junto al fuente (y no los
+# archivos de las otras etapas).
 cp "$ROOT/tests/codinter/valid/factorial_and_loop.ctds" "$TMP/default/ci.ctds"
-run "$TMP/default" ci.ctds
+run "$TMP/default" -target codinter ci.ctds
 if [ $status -eq 0 ] && [ ! -s "$TMP/stdout" ] && [ ! -s "$TMP/stderr" ] &&
    diff -q "$ROOT/tests/codinter/valid/factorial_and_loop.expected" "$TMP/default/ci.ci" > /dev/null &&
    [ ! -e "$TMP/default/ci.sem" ] && [ ! -e "$TMP/default/ci.sint" ] && [ ! -e "$TMP/default/ci.lex" ]; then
-    ok "target por defecto: ci.ci"
+    ok "-target codinter: ci.ci"
 else
-    bad "target por defecto: ci.ci" "exit $status; archivos: $(ls "$TMP/default")"
+    bad "-target codinter: ci.ci" "exit $status; archivos: $(ls "$TMP/default")"
 fi
 
 run "$TMP/default" -target codinter -o code.out ci.ctds
@@ -442,6 +441,40 @@ if [ $status -eq 0 ] && [ -f "$TMP/float.sem" ]; then
     ok "float: valido con -target sem"
 else
     bad "float: valido con -target sem" "exit $status: $(cat "$TMP/stderr")"
+fi
+
+# Etapa assembly: -target assembly genera <fuente>.ass (y no el ejecutable).
+run "$TMP/default" -target assembly ci.ctds
+if [ $status -eq 0 ] && [ ! -s "$TMP/stdout" ] && [ ! -s "$TMP/stderr" ] &&
+   [ -f "$TMP/default/ci.ass" ] && grep -qF ".globl  main" "$TMP/default/ci.ass" &&
+   [ ! -e "$TMP/default/ci.out" ]; then
+    ok "-target assembly: ci.ass"
+else
+    bad "-target assembly: ci.ass" "exit $status; archivos: $(ls "$TMP/default")"
+fi
+
+run "$TMP/default" -target assembly -o salida.s ci.ctds
+if [ $status -eq 0 ] && [ -f "$TMP/default/salida.s" ]; then
+    ok "-o <salida> -target assembly"
+else
+    bad "-o <salida> -target assembly" "exit $status"
+fi
+
+# Sin -target se genera el ejecutable (necesita gcc y Linux x86-64).
+if [ "$(uname -s)" = "Linux" ] && [ "$(uname -m)" = "x86_64" ] && command -v gcc > /dev/null; then
+    cp "$ROOT/tests/codinter/run/loop_sum.ctds" "$TMP/default/exe.ctds"
+    run "$TMP/default" exe.ctds
+    "$TMP/default/exe.out" > /dev/null 2>&1
+    exe_status=$?
+    if [ $status -eq 0 ] && [ ! -s "$TMP/stdout" ] && [ ! -s "$TMP/stderr" ] &&
+       [ -x "$TMP/default/exe.out" ] && [ $exe_status -eq 186 ] &&
+       [ ! -e "$TMP/default/exe.ass" ] && [ ! -e "$TMP/default/exe.ci" ]; then
+        ok "sin -target: genera el ejecutable exe.out (sale con 5050 mod 256)"
+    else
+        bad "sin -target: genera el ejecutable exe.out" "exit $status; ejecutable: $exe_status; archivos: $(ls "$TMP/default")"
+    fi
+else
+    echo "  (omitido: el ejecutable necesita Linux x86-64 y gcc)"
 fi
 
 echo
