@@ -247,10 +247,14 @@ Grupos de pruebas:
 | Scanner errores | `tests/scanner/errors/` | Código 1, no se genera salida, `stderr` igual al esperado. |
 | Parser válidos | `tests/parser/valid/` | Código 0, nada por pantalla, `.sint` igual al esperado y mismo árbol por `stdout` con `-debug`. |
 | Parser errores | `tests/parser/errors/` | Código 1, no se genera salida, `stderr` igual al esperado. |
-| Unitarios | `tests/unit/` | Corre `test_symtab` y `test_ast` (si `UNIT_DIR` está definido, como hace `make test`); cada uno debe terminar con código 0. |
+| Unitarios | `tests/unit/` | Corre `test_symtab`, `test_ast`, `test_ir` y `test_interp` (si `UNIT_DIR` está definido, como hace `make test`); cada uno debe terminar con código 0. |
 | Semántico válidos | `tests/semantic/valid/` | Código 0, nada por pantalla, `.sem` (AST anotado) igual al esperado y mismo AST por `stdout` con `-debug`. |
 | Semántico errores | `tests/semantic/errors/` | Código 1, no se genera salida, `stderr` igual al esperado (mensaje y posición exactos). |
-| Línea de comandos | (en el script) | Errores de uso, nombres de salida por defecto y con `-o`, y cada target: `-target sem` genera `.sem`, `-target parse` y `-target scan` siguen funcionando, `-debug` muestra el AST y la traza de la tabla, y `-target parse` no corre el análisis semántico. |
+| Código intermedio válidos | `tests/codinter/valid/` | Código 0, nada por pantalla, `.ci` igual al esperado y mismo código por `stdout` con `-debug`. |
+| Código intermedio errores | `tests/codinter/errors/` | Código 1, no se genera `.ci`, `stderr` igual al esperado (errores de generación y de etapas anteriores). |
+| Intérprete: programas | `tests/codinter/run/` | `-run`: código 0, nada por `stderr` y `stdout` igual al esperado (el valor que devuelve `main`). |
+| Intérprete: errores | `tests/codinter/run_errors/` | `-run`: código 1, nada por `stdout` y `stderr` igual al error de ejecución esperado. |
+| Línea de comandos | (en el script) | Errores de uso, nombres de salida por defecto y con `-o`, y cada target: el por defecto (`codinter`) genera `.ci`, `-target sem` genera `.sem`, `-target parse` y `-target scan` siguen funcionando, `-debug` muestra el AST y la traza de la tabla, `-target parse` no corre el análisis semántico, `-run` escribe el `.ci` y ejecuta, y solo vale con `-target codinter`. |
 
 ## 9. `src/types.h` y `src/types.c`
 
@@ -605,4 +609,46 @@ Funciones internas de `interp.c` (todas `static`):
 | `runtime_error(msg)` | Informa `runtime error: msg` y devuelve 1. |
 | `execute(in, main_info, has_value, value)` | El bucle principal: toma la instrucción siguiente del marco actual y la ejecuta. `jmp`, `jz` y `jnz` cambian el `pc` a la posición de la etiqueta; `param` apila un argumento; `call` apila un marco nuevo (controlando la profundidad); `ret` desapila el marco y, si hay un marco que espera, le guarda el valor devuelto en el resultado de su `call`; cuando termina `main` deja su valor en el resultado. La división y el resto por cero informan el error; `INT_MIN / -1` da `INT_MIN` y `INT_MIN % -1` da 0. |
 | `interp_run` (pública) | Prepara el estado, busca `main`, llama a `execute` y libera todo (también los marcos que queden tras un error). |
+
+## 17. `tests/unit/test_ir.c` y `tests/unit/test_interp.c`
+
+Igual que `test_symtab.c` y `test_ast.c` (sección 13): programas en C con la macro `CHECK(cond)`, que arma `make test` y
+corre `tests/run_tests.sh`.
+
+### `test_ir.c`: código intermedio
+
+`print_to_string(p)` imprime un programa en una cadena (`open_memstream`) y `prints_as(p, expected)` la compara con el texto
+esperado, mostrando ambos si difieren.
+
+| Función | Qué prueba |
+|---------|------------|
+| `test_operands` | Los constructores `ir_none`, `ir_const` (también negativas), `ir_var` e `ir_func`. |
+| `test_temps_and_labels` | Los temporales se numeran **por método** (cada método empieza en `t1`) y las etiquetas **en todo el programa**; `ntemps` y `nlabels` cuentan bien. |
+| `test_variables` | Orden, `is_global`, `is_param` e `index` de globales, parámetros y locales. |
+| `test_unique_names` | `x`, `x.2`, `x.3`; un nombre ya ocupado (`x.2`) se resuelve como `x.2.2`; otro método no choca; una global del mismo nombre no cuenta. |
+| `test_emit_and_growth` | `ir_emit` guarda los campos; 1000 instrucciones y 100 variables obligan a crecer los arreglos sin perder datos. |
+| `test_print_all_instructions` | El texto exacto de **todas** las instrucciones (`MOVE`, `ADD`, `SUB`, `MUL`, `DIV`, `MOD`, `NEG`, `NOT`, `LT`, `GT`, `EQ`, `JZ`, `JNZ`, `JMP`, `LABEL`, `PARAM`, `CALL` con y sin resultado, `RET` con y sin valor), constantes negativas, globales con `@` y los encabezados. |
+| `test_print_layout` | Programa vacío, métodos vacíos y las líneas en blanco entre secciones. |
+| `test_free_null` | `ir_program_free(NULL)` es válido. |
+
+### `test_interp.c`: intérprete
+
+Los programas se arman directamente con la API de `ir.h`, sin pasar por el generador, para probar el intérprete de forma
+independiente. `eval_binary` y `eval_unary` arman un `main` que devuelve `a op b` y devuelven el estado y el valor.
+
+| Función | Qué prueba |
+|---------|------------|
+| `test_main_result` | `main` con valor, sin valor y sin `ret` (termina al final del código). |
+| `test_operations` | Cada operación aritmética y de comparación, incluida la división y el resto con negativos (truncan hacia cero) y `!` con cualquier valor distinto de cero. |
+| `test_wraparound` | La vuelta de los 32 bits: `INT_MAX + 1`, `INT_MIN - 1`, `65536 * 65536`, `-INT_MIN`, `INT_MIN / -1` e `INT_MIN % -1`. |
+| `test_division_by_zero` | La división y el resto por cero devuelven el estado de error. |
+| `test_loop_with_jumps` | Un bucle que suma 1..10 con etiquetas, `jz` y `jmp`. |
+| `test_conditional_jumps` | `jz` salta con 0 y `jnz` con distinto de 0, y no al revés. |
+| `test_globals_and_locals` | Las globales y locales empiezan en 0 y las globales se modifican. |
+| `test_call_arguments` | Los argumentos llegan en orden a los parámetros (`10 - 3`, no `3 - 10`). |
+| `test_nested_calls` | `f(g(1), 2)`: los `param` de la llamada interna no se mezclan con los de la externa. |
+| `test_call_without_result` | Una llamada sin resultado ejecuta el método (modifica una global). |
+| `test_recursion_frames` | Cada llamada tiene su propio marco: las locales no se pisan al recursar. |
+| `test_call_stack_overflow` | Una recursión infinita es un error de ejecución, no un fallo del intérprete. |
+| `test_deep_recursion` | Una recursión finita de 50000 niveles funciona (1250025000). |
 

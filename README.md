@@ -87,6 +87,10 @@ Casos de test (cada `.ctds` tiene un `.expected` con la salida esperada):
 | `tests/parser/errors/` | errores léxicos y sintácticos | mensajes de `stderr` |
 | `tests/semantic/valid/` | programas válidos | contenido del `.sem` (AST anotado) |
 | `tests/semantic/errors/` | errores semánticos (uno por regla de la spec, y más) | mensajes de `stderr` |
-| `tests/unit/` | tests unitarios en C de la tabla de símbolos, los tipos y el AST | (se ejecutan; no tienen `.expected`) |
+| `tests/codinter/valid/` | programas válidos | contenido del `.ci` (código de tres direcciones) |
+| `tests/codinter/errors/` | errores de generación de código (`float`) | mensajes de `stderr` |
+| `tests/codinter/run/` | programas ejecutados con `-run` | `stdout`: el valor que devuelve `main` |
+| `tests/codinter/run_errors/` | errores de ejecución con `-run` | mensajes de `stderr` |
+| `tests/unit/` | tests unitarios en C de la tabla de símbolos, los tipos, el AST, el código intermedio y el intérprete | (se ejecutan; no tienen `.expected`) |
 
-Los tests del scanner usan `-target scan`, los del parser `-target parse` y los semánticos `-target sem`. Los tests de la interfaz de línea de comandos están en `tests/run_tests.sh`. Los tests unitarios los arma y corre `make test` (el script solo los ejecuta si recibe `UNIT_DIR`).
+Los tests del scanner usan `-target scan`, los del parser `-target parse`, los semánticos `-target sem` y los de código intermedio `-target codinter` (con `-run` para los programas que se ejecutan). Los tests de la interfaz de línea de comandos están en `tests/run_tests.sh`. Los tests unitarios los arma y corre `make test` (el script solo los ejecuta si recibe `UNIT_DIR`).

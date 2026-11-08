@@ -288,3 +288,69 @@ division by zero` con código 1, y una recursión infinita informa `runtime erro
 que `-run` con otro target, con un error semántico y con un programa con `float` se comporta como corresponde. Sin errores
 de memoria con AddressSanitizer y UBSan. Los tests permanentes se agregan en la sección de testing.
 
+## 5. Testing
+
+Los casos están en `tests/codinter/` y `tests/unit/` y los ejecuta `tests/run_tests.sh` (`make test`). Los `.expected` están
+escritos a mano: el código intermedio de cada caso se derivó a mano aplicando las decisiones de la sección 2 (incluidos el
+orden de creación de temporales y etiquetas) y los resultados de los programas se calcularon a mano, antes de correr
+nada. No se copió la salida del compilador.
+
+**Tests unitarios (`tests/unit/`).** `test_ir` prueba el TAD del código intermedio: operandos, numeración de temporales (por
+método) y etiquetas (por programa), nombres únicos de variables, crecimiento de los arreglos y el **formato de texto de
+todas las instrucciones**. `test_interp` prueba el intérprete armando los programas directamente con la API, sin el
+generador: cada operación, la aritmética de 32 bits que da la vuelta, la división por cero, los saltos, las globales, el
+paso de argumentos, los marcos independientes en la recursión y el desborde de la pila de llamadas. La explicación de cada
+función está en `guia-del-codigo.md`, sección 17.
+
+**Código generado (`tests/codinter/valid/`, el `.expected` es el `.ci`):**
+
+| Caso | Qué cubre |
+|------|-----------|
+| `empty_main` | El código más chico: un método vacío con su `ret` implícito. |
+| `globals` | Declaración de globales (`global @g`) y su asignación; `true` como constante 1. |
+| `arithmetic` | Precedencia y asociatividad de `+ - * / %`, el `-` unario y los paréntesis. |
+| `comparisons_logic` | `< > ==`, `!` y `\|\|` con cortocircuito. |
+| `if_else` | `if` con y sin `else`: etiquetas y saltos, con una variable `boolean` como condición. |
+| `while_nested` | Dos `while` anidados y la numeración de sus etiquetas. |
+| `calls_nested_args` | Argumentos que son llamadas (`f(g(1), 2)`) y `param` consecutivos. |
+| `calls_statements` | Recursión doble (`fib`), llamada como sentencia a un método con tipo y a uno `void`, y el `ret` implícito duplicado. |
+| `short_circuit` | `&&` y `\|\|` anidados con negación: etiquetas y temporales del cortocircuito. |
+| `global_protection` | La copia de una global antes de una llamada (decisión 9), como operando izquierdo y como argumento. |
+| `scopes` | Variables con el mismo nombre en bloques distintos (`x`, `x.2`, `x.3`) frente a la global `@x`. |
+| `return_forms` | `return` con y sin valor en medio de un método y retorno implícito. |
+| `unary_operators` | `- - y`, `-(y + 1)` y `!!b`. |
+| `long_expression` | Una cadena de cinco sumas (muchos temporales) y una llamada con cinco argumentos. |
+| `spec_example_fixed` | El ejemplo de la spec con `main` corregido (`int main`): sin `ret` implícito y una etiqueta final. |
+| `nested_blocks` | Sentencias vacías y bloques anidados. |
+| `factorial_and_loop` | El ejemplo completo de la sección 2 (con `while` y `&&`). |
+
+**Programas ejecutados con `-run` (`tests/codinter/run/`, el `.expected` es el `stdout`):** 25 programas que verifican la
+semántica y no solo la forma del código: factorial de 10, Fibonacci de 20, suma 1..100, máximo común divisor, Collatz de 27
+(111 pasos), Ackermann(2, 3), cantidad de primos menores que 30, potencias, una recursión de 50000 niveles, bucles
+anidados, el **cortocircuito** (`short_circuit`: `inc()` solo se llama en dos de las cuatro combinaciones), el **orden de
+evaluación** (`eval_order_binary` y `eval_order_args`, donde un método modifica una global), la división y el resto
+truncados hacia cero (`-301`), la **vuelta de 32 bits** (`2147483647 + 1`, `INT_MIN / -1`, `INT_MIN % -1`), inicialización en
+0, variables que ocultan a otras, un `boolean main` y un `void main` (que no imprime nada).
+
+**Errores de ejecución (`tests/codinter/run_errors/`, el `.expected` es el `stderr`):** `division_by_zero`,
+`remainder_by_zero`, `division_by_zero_in_call` y `call_stack_overflow`. Cada uno verifica el mensaje, el código de salida 1 y
+que no se imprima ningún resultado.
+
+**Errores de generación (`tests/codinter/errors/`):** un caso por cada lugar donde puede aparecer `float` (variable global,
+parámetro, tipo de retorno, literal), uno con cinco apariciones que verifica el orden y las posiciones, y uno donde un error
+semántico se informa y no se generan los errores de `float` (el análisis semántico corta antes).
+
+**Línea de comandos (en el script):** el target por defecto genera `<fuente>.ci` y no los archivos de las otras etapas; `-o`
+con `-target codinter`; `-run` escribe el `.ci` y ejecuta; `-run` con `-target sem` o `parse` se rechaza con código 2;
+`-run -debug` imprime primero el código y después el resultado; `-run` con un error semántico no genera ni ejecuta; y un
+programa con `float` sigue siendo válido con `-target sem`.
+
+**Regresión y memoria:** los 119 casos de las etapas 1 a 3 siguen pasando. En total `make test` ejecuta 181 casos y
+`make test-asan` los mismos con AddressSanitizer y UBSan, sin errores de memoria. Se comprobó además que los tests detectan
+fallas: al cambiar a propósito una etiqueta en un `.expected` de código, un resultado en uno de `-run` y un mensaje en
+uno de error de ejecución, los tres casos fallaron.
+
+**Hallazgos del testing:** ningún `.expected` calculado a mano necesitó correcciones y no se encontraron errores en el
+generador ni en el intérprete. El caso del `ret` duplicado en un método `void` que termina con `return;`
+(`calls_statements`) deja documentado ese comportamiento (decisión 11).
+
