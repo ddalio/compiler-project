@@ -210,7 +210,7 @@ cli "opcion desconocida"         2 "unknown option '-foo'"    -- -foo keywords.c
 cli "dos archivos de entrada"    2 "only one input file"      -- keywords.ctds literals.ctds
 cli "-o sin argumento"           2 "requires an argument"     -- keywords.ctds -o
 cli "-target sin argumento"      2 "requires an argument"     -- keywords.ctds -target
-cli "-target no disponible"      2 "not available yet"        -- -target codinter keywords.ctds
+cli "-target no disponible"      2 "not available yet"        -- -target assembly keywords.ctds
 cli "-target desconocido"        2 "unknown target 'foo'"     -- -target foo keywords.ctds
 
 # Nombre de salida por defecto: <fuente>.lex junto al fuente.
@@ -259,7 +259,7 @@ else
     bad "-target scan no ejecuta el parser" "exit $status: $(cat "$TMP/stderr")"
 fi
 
-# Un archivo inexistente es error de uso tambien con el target por defecto (sem).
+# Un archivo inexistente es error de uso tambien con el target por defecto (codinter).
 run "$TMP/default" no_existe.ctds
 if [ $status -eq 2 ] && grep -qF "cannot open" "$TMP/stderr"; then
     ok "archivo inexistente (target por defecto)"
@@ -267,16 +267,16 @@ else
     bad "archivo inexistente (target por defecto)" "exit $status"
 fi
 
-# Etapa sem: el target por defecto genera <fuente>.sem junto al fuente (y no
-# los archivos de las otras etapas).
+# Etapa sem: -target sem genera <fuente>.sem junto al fuente (y no los archivos
+# de las otras etapas).
 cp "$ROOT/tests/semantic/valid/recursion.ctds" "$TMP/default/sem.ctds"
-run "$TMP/default" sem.ctds
+run "$TMP/default" -target sem sem.ctds
 if [ $status -eq 0 ] && [ ! -s "$TMP/stdout" ] && [ ! -s "$TMP/stderr" ] &&
    diff -q "$ROOT/tests/semantic/valid/recursion.expected" "$TMP/default/sem.sem" > /dev/null &&
    [ ! -e "$TMP/default/sem.sint" ] && [ ! -e "$TMP/default/sem.lex" ]; then
-    ok "target por defecto: sem.sem"
+    ok "-target sem: sem.sem"
 else
-    bad "target por defecto: sem.sem" "exit $status; archivos: $(ls "$TMP/default")"
+    bad "-target sem: sem.sem" "exit $status; archivos: $(ls "$TMP/default")"
 fi
 
 run "$TMP/default" -target sem -o ast.out sem.ctds
@@ -287,7 +287,7 @@ else
 fi
 
 # -debug: el AST por stdout y la traza de la tabla de simbolos por stderr.
-run "$TMP/default" -debug -o debug.out sem.ctds
+run "$TMP/default" -target sem -debug -o debug.out sem.ctds
 if [ $status -eq 0 ] && grep -qF "[symtab] insert fact (method int) at level 1" "$TMP/stderr" &&
    grep -qF "[symtab] open level 2" "$TMP/stderr" &&
    diff -q "$ROOT/tests/semantic/valid/recursion.expected" "$TMP/stdout" > /dev/null; then

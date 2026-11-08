@@ -1,12 +1,13 @@
 /*
  * main.c - Interfaz de linea de comandos de c-tds
- *          (Etapas 1, 2 y 3: analisis lexico, sintactico y semantico).
+ *          (Etapas 1 a 4: analisis lexico, sintactico, semantico y generacion
+ *          de codigo intermedio).
  *
  *   c-tds [opcion] nombreArchivo.ctds
  *
  *   -o <salida>      nombre del archivo de salida
- *   -target <etapa>  etapa hasta la que se compila: scan, parse o sem (por
- *                    defecto sem, la etapa actual)
+ *   -target <etapa>  etapa hasta la que se compila: scan, parse, sem o codinter
+ *                    (por defecto codinter, la etapa actual)
  *   -debug           imprime informacion de depuracion
  *
  * Salida de cada etapa:
@@ -21,6 +22,8 @@
  *          identificador), un nodo por linea (ver ast.h).
  *          -debug imprime ese AST por stdout y la traza de la tabla de
  *          simbolos por stderr.
+ *   codinter  archivo <nombre>.ci con el codigo de tres direcciones (ver ir.h).
+ *          -debug imprime ese codigo por stdout.
  *
  * Si hay errores no se genera el archivo de salida.
  * Codigos de salida: 0 = ok, 1 = errores lexicos, sintacticos o semanticos,
@@ -34,6 +37,8 @@
 #include <string.h>
 
 #include "ast.h"
+#include "ir.h"
+#include "irgen.h"
 #include "parser.h"
 #include "scanner.h"
 #include "semantic.h"
@@ -58,8 +63,8 @@ static void usage(FILE *out)
         "Usage: c-tds [options] file.ctds\n"
         "Options:\n"
         "  -o <output>      write the output to <output>\n"
-        "  -target <stage>  compile up to <stage> (available: scan, parse, sem;\n"
-        "                   default: sem)\n"
+        "  -target <stage>  compile up to <stage> (available: scan, parse, sem,\n"
+        "                   codinter; default: codinter)\n"
         "  -debug           print debugging information\n");
 }
 
@@ -71,14 +76,14 @@ static int has_extension(const char *name, const char *ext)
 
 /* Etapas que define la catedra (scan, parse, codinter, assembly) mas "sem",
  * el analisis semantico, que la catedra no lista como target pero tiene su
- * propia extension de salida (.sem). Por ahora estan implementadas scan, parse
- * y sem. */
+ * propia extension de salida (.sem). Por ahora estan implementadas scan, parse,
+ * sem y codinter. */
 static int check_target(const char *target)
 {
     if (strcmp(target, "scan") == 0 || strcmp(target, "parse") == 0 ||
-        strcmp(target, "sem") == 0)
+        strcmp(target, "sem") == 0 || strcmp(target, "codinter") == 0)
         return 1;
-    if (strcmp(target, "codinter") == 0 || strcmp(target, "assembly") == 0)
+    if (strcmp(target, "assembly") == 0)
         fprintf(stderr, "c-tds: target '%s' is not available yet\n", target);
     else
         fprintf(stderr, "c-tds: unknown target '%s'\n", target);
@@ -90,7 +95,7 @@ static int parse_args(int argc, char **argv, Options *opt)
 {
     opt->input = NULL;
     opt->output = NULL;
-    opt->target = "sem";            /* por defecto: hasta la etapa actual */
+    opt->target = "codinter";       /* por defecto: hasta la etapa actual */
     opt->debug = 0;
 
     for (int i = 1; i < argc; i++) {
@@ -269,17 +274,36 @@ static int run_parse(const Options *opt)
     return status;
 }
 
-/* Etapa sem: scanner + parser + analisis semantico; escribe el AST anotado en
- * el .sem. El analisis semantico solo corre si el programa no tiene errores
- * lexicos ni sintacticos. */
-static int run_sem(const Options *opt)
-{
-    int rc = parse_source(opt, 0);
+/* Resultado del front end: el AST analizado y la tabla de simbolos con la que
+ * se lo analizo. La tabla tiene que seguir viva mientras se use el AST (sus
+ * nodos referencian simbolos de la tabla). */
+typedef struct {
     Ast *ast;
     SymTab *tab;
-    int errors;
-    int status = EXIT_OK;
+    int errors;             /* errores semanticos */
+} Front;
 
+static void front_free(Front *f)
+{
+    symtab_free(f->tab);
+    ast_free(f->ast);
+    f->tab = NULL;
+    f->ast = NULL;
+}
+
+/* Front end completo: scanner, parser, AST y analisis semantico (que solo corre
+ * si no hubo errores lexicos ni sintacticos). Devuelve EXIT_OK si llego a correr
+ * el analisis semantico: entonces `f` tiene el AST y la tabla (que el que llama
+ * debe liberar con front_free) y f->errors la cantidad de errores semanticos.
+ * Si no, devuelve el codigo de salida (EXIT_SRC_ERROR o EXIT_USAGE) y no deja
+ * nada que liberar. `trace` activa la traza de la tabla de simbolos. */
+static int run_front(const Options *opt, int trace, Front *f)
+{
+    int rc = parse_source(opt, 0);
+
+    f->ast = NULL;
+    f->tab = NULL;
+    f->errors = 0;
     if (rc < 0)
         return EXIT_USAGE;
     if (rc != 0 || lex_errors > 0) {
@@ -288,34 +312,90 @@ static int run_sem(const Options *opt)
         return rc == 2 ? EXIT_USAGE : EXIT_SRC_ERROR;
     }
 
-    ast = ast_from_tree(parse_root);    /* el AST no depende del arbol de parsing */
+    f->ast = ast_from_tree(parse_root); /* el AST no depende del arbol de parsing */
     node_free(parse_root);
     parse_root = NULL;
 
-    tab = symtab_new();
-    if (opt->debug)
-        symtab_set_trace(tab, stderr);
-    errors = semantic_analyze(ast, opt->input, tab);
+    f->tab = symtab_new();
+    if (trace)
+        symtab_set_trace(f->tab, stderr);
+    f->errors = semantic_analyze(f->ast, opt->input, f->tab);
+    return EXIT_OK;
+}
 
-    if (errors > 0) {
-        status = EXIT_SRC_ERROR;        /* no se genera archivo de salida */
+/* Escribe en el archivo de salida lo que produce `print` (ast_print o ir_print).
+ * Devuelve EXIT_OK o EXIT_USAGE si no se pudo escribir. */
+static int write_output(const Options *opt, const char *stage_ext,
+                        void (*print)(FILE *, const void *), const void *what)
+{
+    char *path = output_path(opt, stage_ext);
+    FILE *out = fopen(path, "w");
+    int status = EXIT_OK;
+
+    if (!out) {
+        status = write_failed(path);
     } else {
-        char *path = output_path(opt, ".sem");
-        FILE *out = fopen(path, "w");
-
-        if (!out) {
+        print(out, what);
+        if (fclose(out) != 0)
             status = write_failed(path);
-        } else {
-            ast_print(out, ast);
-            if (fclose(out) != 0)
-                status = write_failed(path);
-        }
-        free(path);
     }
+    free(path);
+    return status;
+}
+
+static void print_ast_cb(FILE *out, const void *ast)
+{
+    ast_print(out, ast);
+}
+
+static void print_ir_cb(FILE *out, const void *prog)
+{
+    ir_print(out, prog);
+}
+
+/* Etapa sem: front end completo; escribe el AST anotado en el .sem. */
+static int run_sem(const Options *opt)
+{
+    Front f;
+    int status = run_front(opt, opt->debug, &f);
+
+    if (status != EXIT_OK)
+        return status;
+    if (f.errors > 0)
+        status = EXIT_SRC_ERROR;        /* no se genera archivo de salida */
+    else
+        status = write_output(opt, ".sem", print_ast_cb, f.ast);
     if (opt->debug)
-        ast_print(stdout, ast);
-    symtab_free(tab);
-    ast_free(ast);
+        ast_print(stdout, f.ast);
+    front_free(&f);
+    return status;
+}
+
+/* Etapa codinter: front end completo y generacion de codigo intermedio; escribe
+ * el codigo de tres direcciones en el .ci. El codigo solo se genera si el
+ * programa no tiene ningun error (lexico, sintactico ni semantico). */
+static int run_codinter(const Options *opt)
+{
+    Front f;
+    int status = run_front(opt, 0, &f);
+
+    if (status != EXIT_OK)
+        return status;
+    if (f.errors > 0) {
+        status = EXIT_SRC_ERROR;
+    } else {
+        IrProgram *prog = irgen_generate(f.ast, opt->input);
+
+        if (!prog) {
+            status = EXIT_SRC_ERROR;    /* p. ej. usa float (ya informado) */
+        } else {
+            status = write_output(opt, ".ci", print_ir_cb, prog);
+            if (opt->debug)
+                ir_print(stdout, prog);
+            ir_program_free(prog);
+        }
+    }
+    front_free(&f);
     return status;
 }
 
@@ -331,5 +411,7 @@ int main(int argc, char **argv)
         return run_scan(&opt);
     if (strcmp(opt.target, "parse") == 0)
         return run_parse(&opt);
-    return run_sem(&opt);
+    if (strcmp(opt.target, "sem") == 0)
+        return run_sem(&opt);
+    return run_codinter(&opt);
 }
