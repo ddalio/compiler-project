@@ -1,0 +1,8 @@
+int g;
+boolean b;
+int main() {
+  int a;
+  { int a; a = 7; }
+  if (b) { return 99; }
+  return a + g;
+}

@@ -1,0 +1,25 @@
+func main()
+  local i
+  local j
+  local s
+  i = 0
+  s = 0
+L1:
+  t1 = i < 3
+  jz t1, L2
+  j = 0
+L3:
+  t2 = j < i
+  jz t2, L4
+  t3 = s + 1
+  s = t3
+  t4 = j + 1
+  j = t4
+  jmp L3
+L4:
+  t5 = i + 1
+  i = t5
+  jmp L1
+L2:
+  ret
+end

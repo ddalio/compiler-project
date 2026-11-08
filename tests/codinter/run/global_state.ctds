@@ -1,0 +1,8 @@
+int c;
+void tick() { c = c + 1; }
+int main() {
+  tick();
+  tick();
+  tick();
+  return c;
+}

@@ -1,0 +1,8 @@
+global @g
+global @b
+
+func main()
+  @g = 1
+  @b = 1
+  ret
+end

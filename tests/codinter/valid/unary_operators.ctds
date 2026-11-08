@@ -1,0 +1,9 @@
+void main() {
+  int x;
+  int y;
+  boolean b;
+  y = 4;
+  x = - - y;
+  x = -(y + 1);
+  b = !!b;
+}

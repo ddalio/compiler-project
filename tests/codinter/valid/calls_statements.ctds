@@ -1,0 +1,13 @@
+int fib(int n) {
+  if (n < 2) { return n; }
+  return fib(n - 1) + fib(n - 2);
+}
+void log(int v) { return; }
+void main() {
+  int i;
+  i = 0;
+  while (i < 3) {
+    if (i == 1) { fib(i); } else { log(i); }
+    i = i + 1;
+  }
+}

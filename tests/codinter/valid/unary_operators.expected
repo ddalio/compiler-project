@@ -1,0 +1,16 @@
+func main()
+  local x
+  local y
+  local b
+  y = 4
+  t1 = - y
+  t2 = - t1
+  x = t2
+  t3 = y + 1
+  t4 = - t3
+  x = t4
+  t5 = ! b
+  t6 = ! t5
+  b = t6
+  ret
+end

@@ -1,0 +1,3 @@
+int g;
+boolean b;
+void main() { g = 1; b = true; }

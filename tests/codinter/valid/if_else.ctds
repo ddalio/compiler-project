@@ -1,0 +1,7 @@
+void main() {
+  int x;
+  boolean ok;
+  ok = true;
+  if (ok) { x = 1; } else { x = 2; }
+  if (x == 1) { x = 3; }
+}

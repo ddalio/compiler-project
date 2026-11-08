@@ -9,6 +9,17 @@
 #                                    (codigo de salida 0, nada por stdout/stderr)
 #   tests/scanner/errors/*.ctds   -> <caso>.expected = stderr esperado
 #                                    (codigo de salida 1, sin archivo de salida)
+# Etapa 4 (codigo intermedio):
+#   tests/codinter/valid/*.ctds     -> <caso>.expected = contenido esperado del .ci
+#   tests/codinter/errors/*.ctds    -> <caso>.expected = stderr esperado (codigo 1,
+#                                      sin archivo de salida)
+#   tests/codinter/run/*.ctds       -> <caso>.expected = stdout de `-run` (el valor
+#                                      que devuelve main); codigo de salida 0
+#   tests/codinter/run_errors/*.ctds -> <caso>.expected = stderr de `-run` (error
+#                                      de ejecucion); codigo 1, nada por stdout
+#   tests/unit/test_ir.c, test_interp.c -> unitarios del codigo intermedio y del
+#       interprete.
+#
 # Etapa 3 (semantico):
 #   tests/semantic/valid/*.ctds   -> <caso>.expected = contenido esperado del .sem
 #                                    (AST anotado; codigo de salida 0)
@@ -132,9 +143,9 @@ for src in "$ROOT"/tests/parser/errors/*.ctds; do
     fi
 done
 
-echo "== Tests unitarios (tabla de simbolos, tipos y AST) =="
+echo "== Tests unitarios (tabla de simbolos, tipos, AST, codigo intermedio e interprete) =="
 if [ -n "$UNIT_DIR" ]; then
-    for unit in test_symtab test_ast; do
+    for unit in test_symtab test_ast test_ir test_interp; do
         if [ ! -x "$UNIT_DIR/$unit" ]; then
             bad "$unit" "no se encuentra $UNIT_DIR/$unit (correr 'make test')"
         elif "$UNIT_DIR/$unit" > "$TMP/unit.out" 2>&1; then
@@ -180,6 +191,78 @@ for src in "$ROOT"/tests/semantic/errors/*.ctds; do
         bad "$name" "exit code $status (se esperaba 1)"
     elif [ -e "$TMP/out.sem" ]; then
         bad "$name" "con errores no debe generarse el archivo de salida"
+    elif ! diff -u "$expected" "$TMP/stderr" > "$TMP/diff"; then
+        bad "$name" "$(cat "$TMP/diff")"
+    else
+        ok "$name"
+    fi
+done
+
+echo "== Codigo intermedio: casos validos =="
+for src in "$ROOT"/tests/codinter/valid/*.ctds; do
+    name="$(basename "$src" .ctds)"
+    expected="${src%.ctds}.expected"
+    rm -f "$TMP/out.ci"
+    run "$(dirname "$src")" -target codinter -o "$TMP/out.ci" "$name.ctds"
+    if [ $status -ne 0 ]; then
+        bad "$name" "exit code $status (se esperaba 0): $(cat "$TMP/stderr")"
+    elif [ -s "$TMP/stdout" ] || [ -s "$TMP/stderr" ]; then
+        bad "$name" "sin -debug no debe imprimirse nada"
+    elif ! diff -u "$expected" "$TMP/out.ci" > "$TMP/diff"; then
+        bad "$name" "$(cat "$TMP/diff")"
+    else
+        # Con -debug el mismo codigo sale por stdout.
+        run "$(dirname "$src")" -target codinter -debug -o "$TMP/out2.ci" "$name.ctds"
+        if [ $status -eq 0 ] && diff -u "$expected" "$TMP/stdout" > "$TMP/diff"; then
+            ok "$name"
+        else
+            bad "$name (-debug)" "exit $status $(cat "$TMP/diff")"
+        fi
+    fi
+done
+
+echo "== Codigo intermedio: errores de generacion =="
+for src in "$ROOT"/tests/codinter/errors/*.ctds; do
+    name="$(basename "$src" .ctds)"
+    expected="${src%.ctds}.expected"
+    rm -f "$TMP/out.ci"
+    run "$(dirname "$src")" -target codinter -o "$TMP/out.ci" "$name.ctds"
+    if [ $status -ne 1 ]; then
+        bad "$name" "exit code $status (se esperaba 1)"
+    elif [ -e "$TMP/out.ci" ]; then
+        bad "$name" "con errores no debe generarse el archivo de salida"
+    elif ! diff -u "$expected" "$TMP/stderr" > "$TMP/diff"; then
+        bad "$name" "$(cat "$TMP/diff")"
+    else
+        ok "$name"
+    fi
+done
+
+echo "== Interprete: programas (-run) =="
+for src in "$ROOT"/tests/codinter/run/*.ctds; do
+    name="$(basename "$src" .ctds)"
+    expected="${src%.ctds}.expected"
+    run "$(dirname "$src")" -run -o "$TMP/run.ci" "$name.ctds"
+    if [ $status -ne 0 ]; then
+        bad "$name" "exit code $status (se esperaba 0): $(cat "$TMP/stderr")"
+    elif [ -s "$TMP/stderr" ]; then
+        bad "$name" "no debe haber nada por stderr: $(cat "$TMP/stderr")"
+    elif ! diff -u "$expected" "$TMP/stdout" > "$TMP/diff"; then
+        bad "$name" "$(cat "$TMP/diff")"
+    else
+        ok "$name"
+    fi
+done
+
+echo "== Interprete: errores de ejecucion =="
+for src in "$ROOT"/tests/codinter/run_errors/*.ctds; do
+    name="$(basename "$src" .ctds)"
+    expected="${src%.ctds}.expected"
+    run "$(dirname "$src")" -run -o "$TMP/run.ci" "$name.ctds"
+    if [ $status -ne 1 ]; then
+        bad "$name" "exit code $status (se esperaba 1)"
+    elif [ -s "$TMP/stdout" ]; then
+        bad "$name" "un error de ejecucion no debe imprimir resultado: $(cat "$TMP/stdout")"
     elif ! diff -u "$expected" "$TMP/stderr" > "$TMP/diff"; then
         bad "$name" "$(cat "$TMP/diff")"
     else
@@ -302,6 +385,63 @@ if [ $status -eq 0 ] && [ -f "$TMP/only_parse.sint" ]; then
     ok "-target parse no ejecuta el analisis semantico"
 else
     bad "-target parse no ejecuta el analisis semantico" "exit $status: $(cat "$TMP/stderr")"
+fi
+
+# Etapa codinter: el target por defecto genera <fuente>.ci junto al fuente (y no
+# los archivos de las otras etapas).
+cp "$ROOT/tests/codinter/valid/factorial_and_loop.ctds" "$TMP/default/ci.ctds"
+run "$TMP/default" ci.ctds
+if [ $status -eq 0 ] && [ ! -s "$TMP/stdout" ] && [ ! -s "$TMP/stderr" ] &&
+   diff -q "$ROOT/tests/codinter/valid/factorial_and_loop.expected" "$TMP/default/ci.ci" > /dev/null &&
+   [ ! -e "$TMP/default/ci.sem" ] && [ ! -e "$TMP/default/ci.sint" ] && [ ! -e "$TMP/default/ci.lex" ]; then
+    ok "target por defecto: ci.ci"
+else
+    bad "target por defecto: ci.ci" "exit $status; archivos: $(ls "$TMP/default")"
+fi
+
+run "$TMP/default" -target codinter -o code.out ci.ctds
+if [ $status -eq 0 ] && [ -f "$TMP/default/code.out" ]; then
+    ok "-o <salida> -target codinter"
+else
+    bad "-o <salida> -target codinter" "exit $status"
+fi
+
+# -run: escribe el .ci y ademas ejecuta el programa.
+cp "$ROOT/tests/codinter/run/factorial.ctds" "$TMP/default/fact.ctds"
+run "$TMP/default" -run fact.ctds
+if [ $status -eq 0 ] && [ "$(cat "$TMP/stdout")" = "3628800" ] && [ -f "$TMP/default/fact.ci" ]; then
+    ok "-run: escribe el .ci y ejecuta"
+else
+    bad "-run: escribe el .ci y ejecuta" "exit $status; stdout: $(cat "$TMP/stdout"); archivos: $(ls "$TMP/default")"
+fi
+
+# -run solo vale con -target codinter.
+cli "-run con -target sem"       2 "requires -target codinter" -- -run -target sem keywords.ctds
+cli "-run con -target parse"     2 "requires -target codinter" -- -run -target parse keywords.ctds
+
+# -run con -debug: primero el codigo intermedio y despues el resultado.
+run "$TMP/default" -run -debug -o debug.ci fact.ctds
+if [ $status -eq 0 ] && head -n 1 "$TMP/stdout" | grep -qF "func fact(n)" &&
+   [ "$(tail -n 1 "$TMP/stdout")" = "3628800" ]; then
+    ok "-run -debug: codigo y despues resultado"
+else
+    bad "-run -debug: codigo y despues resultado" "exit $status: $(head -n 2 "$TMP/stdout")"
+fi
+
+# Con un error semantico no se genera codigo ni se ejecuta nada.
+run "$ROOT/tests/semantic/errors" -run -o "$TMP/never.ci" rule2_undeclared.ctds
+if [ $status -eq 1 ] && [ ! -s "$TMP/stdout" ] && [ ! -e "$TMP/never.ci" ]; then
+    ok "-run con error semantico: no genera ni ejecuta"
+else
+    bad "-run con error semantico: no genera ni ejecuta" "exit $status"
+fi
+
+# Un programa con float es valido para -target sem pero no para codinter.
+run "$ROOT/tests/codinter/errors" -target sem -o "$TMP/float.sem" float_global.ctds
+if [ $status -eq 0 ] && [ -f "$TMP/float.sem" ]; then
+    ok "float: valido con -target sem"
+else
+    bad "float: valido con -target sem" "exit $status: $(cat "$TMP/stderr")"
 fi
 
 echo

@@ -1,0 +1,8 @@
+int g;
+int h() { g = 5; return 1; }
+int two(int a, int b) { return a + b; }
+void main() {
+  int x;
+  x = g + h();
+  x = two(g, h());
+}

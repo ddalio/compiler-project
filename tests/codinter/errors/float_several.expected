@@ -1,0 +1,5 @@
+float_several.ctds:1:7: codegen error: type 'float' is not supported by the code generator
+float_several.ctds:1:10: codegen error: type 'float' is not supported by the code generator
+float_several.ctds:2:14: codegen error: type 'float' is not supported by the code generator
+float_several.ctds:2:25: codegen error: type 'float' is not supported by the code generator
+float_several.ctds:2:32: codegen error: type 'float' is not supported by the code generator

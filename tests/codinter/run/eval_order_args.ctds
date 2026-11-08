@@ -1,0 +1,4 @@
+int g;
+int h() { g = 5; return 1; }
+int two(int a, int b) { return a * 10 + b; }
+int main() { return two(g, h()); }

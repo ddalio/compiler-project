@@ -1,0 +1,41 @@
+func fib(n)
+  t1 = n < 2
+  jz t1, L1
+  ret n
+L1:
+  t2 = n - 1
+  param t2
+  t3 = call fib, 1
+  t4 = n - 2
+  param t4
+  t5 = call fib, 1
+  t6 = t3 + t5
+  ret t6
+end
+
+func log(v)
+  ret
+  ret
+end
+
+func main()
+  local i
+  i = 0
+L2:
+  t1 = i < 3
+  jz t1, L3
+  t2 = i == 1
+  jz t2, L4
+  param i
+  t3 = call fib, 1
+  jmp L5
+L4:
+  param i
+  call log, 1
+L5:
+  t4 = i + 1
+  i = t4
+  jmp L2
+L3:
+  ret
+end

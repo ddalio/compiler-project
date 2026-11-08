@@ -1,0 +1,26 @@
+func g(a)
+  ret a
+end
+
+func f(a, b)
+  t1 = a + b
+  ret t1
+end
+
+func main()
+  local r
+  param 1
+  t1 = call g, 1
+  param t1
+  param 2
+  t2 = call f, 2
+  r = t2
+  param 3
+  t3 = call g, 1
+  t4 = t3 + 1
+  param 2
+  param t4
+  t5 = call f, 2
+  r = t5
+  ret
+end

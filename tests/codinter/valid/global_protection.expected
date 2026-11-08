@@ -1,0 +1,26 @@
+global @g
+
+func h()
+  @g = 5
+  ret 1
+end
+
+func two(a, b)
+  t1 = a + b
+  ret t1
+end
+
+func main()
+  local x
+  t1 = @g
+  t2 = call h, 0
+  t3 = t1 + t2
+  x = t3
+  t4 = @g
+  t5 = call h, 0
+  param t4
+  param t5
+  t6 = call two, 2
+  x = t6
+  ret
+end

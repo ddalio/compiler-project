@@ -1,0 +1,10 @@
+int g;
+int fact(int n) {
+  if (n < 2) { return 1; }
+  return n * fact(n - 1);
+}
+void main() {
+  int r;
+  r = fact(5);
+  while (r > 0 && g == 0) { r = r - 1; }
+}

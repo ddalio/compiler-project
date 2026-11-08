@@ -1,0 +1,20 @@
+global @b
+
+func main()
+  local r
+  t1 = 1
+  jz t1, L1
+  t2 = 0
+  jnz t2, L2
+  t2 = @b
+L2:
+  t1 = t2
+L1:
+  t3 = t1
+  jz t3, L3
+  t4 = ! @b
+  t3 = t4
+L3:
+  r = t3
+  ret
+end

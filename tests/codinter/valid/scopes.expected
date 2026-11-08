@@ -1,0 +1,13 @@
+global @x
+
+func main()
+  local x
+  local x.2
+  local x.3
+  x.2 = 1
+  x = 2
+  jz 1, L1
+  x.3 = 3
+L1:
+  ret
+end

@@ -1,0 +1,17 @@
+func sum5(a, b, c, d, e)
+  t1 = a + b
+  t2 = t1 + c
+  t3 = t2 + d
+  t4 = t3 + e
+  ret t4
+end
+
+func main()
+  param 1
+  param 2
+  param 3
+  param 4
+  param 5
+  t1 = call sum5, 5
+  ret t1
+end

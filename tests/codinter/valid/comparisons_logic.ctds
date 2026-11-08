@@ -1,0 +1,8 @@
+void main() {
+  int x;
+  boolean ok;
+  x = 5;
+  ok = !(x < 10) || x == 7;
+  ok = x > 1;
+  ok = x == 5;
+}

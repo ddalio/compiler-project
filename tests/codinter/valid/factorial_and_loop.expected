@@ -1,0 +1,33 @@
+global @g
+
+func fact(n)
+  t1 = n < 2
+  jz t1, L1
+  ret 1
+L1:
+  t2 = n - 1
+  param t2
+  t3 = call fact, 1
+  t4 = n * t3
+  ret t4
+end
+
+func main()
+  local r
+  param 5
+  t1 = call fact, 1
+  r = t1
+L2:
+  t2 = r > 0
+  t3 = t2
+  jz t3, L4
+  t4 = @g == 0
+  t3 = t4
+L4:
+  jz t3, L3
+  t5 = r - 1
+  r = t5
+  jmp L2
+L3:
+  ret
+end

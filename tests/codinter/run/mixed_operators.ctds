@@ -1,0 +1,7 @@
+int main() {
+  int a;
+  int b;
+  a = 17;
+  b = 5;
+  return a / b * 100 + a % b * 10 + (a - b);
+}

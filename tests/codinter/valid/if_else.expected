@@ -1,0 +1,16 @@
+func main()
+  local x
+  local ok
+  ok = 1
+  jz ok, L1
+  x = 1
+  jmp L2
+L1:
+  x = 2
+L2:
+  t1 = x == 1
+  jz t1, L3
+  x = 3
+L3:
+  ret
+end

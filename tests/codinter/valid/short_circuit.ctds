@@ -1,0 +1,5 @@
+boolean b;
+void main() {
+  boolean r;
+  r = true && (false || b) && !b;
+}

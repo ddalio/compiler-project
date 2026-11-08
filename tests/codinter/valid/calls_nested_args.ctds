@@ -1,0 +1,3 @@
+int g(int a) { return a; }
+int f(int a, int b) { return a + b; }
+void main() { int r; r = f(g(1), 2); r = f(2, g(3) + 1); }

@@ -1,0 +1,1 @@
+float_return_type.ctds:1:7: codegen error: type 'float' is not supported by the code generator

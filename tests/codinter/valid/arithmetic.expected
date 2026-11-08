@@ -1,0 +1,14 @@
+func main()
+  local x
+  t1 = - 3
+  t2 = 4 * 2
+  t3 = t2 % 5
+  t4 = t1 + t3
+  x = t4
+  t5 = 1 + 2
+  t6 = 3 - 4
+  t7 = t5 * t6
+  t8 = t7 / 5
+  x = t8
+  ret
+end

@@ -1,0 +1,25 @@
+func a()
+  ret 1
+end
+
+func b(x)
+  t1 = x > 0
+  jz t1, L1
+  ret x
+L1:
+  t2 = 0 - x
+  ret t2
+end
+
+func c(x)
+  t1 = x == 0
+  jz t1, L2
+  ret
+L2:
+  x = 1
+  ret
+end
+
+func main()
+  ret
+end
