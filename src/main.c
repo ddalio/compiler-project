@@ -9,6 +9,8 @@
  *   -target <etapa>  etapa hasta la que se compila: scan, parse, sem o codinter
  *                    (por defecto codinter, la etapa actual)
  *   -debug           imprime informacion de depuracion
+ *   -run             con -target codinter: ejecuta el codigo intermedio generado
+ *                    desde main e imprime el valor que devuelve (si devuelve uno)
  *
  * Salida de cada etapa:
  *   scan   archivo <nombre>.lex con un token por linea:
@@ -37,6 +39,7 @@
 #include <string.h>
 
 #include "ast.h"
+#include "interp.h"
 #include "ir.h"
 #include "irgen.h"
 #include "parser.h"
@@ -55,6 +58,7 @@ typedef struct {
     const char *output;     /* NULL => nombre por defecto */
     const char *target;     /* etapa final */
     int debug;
+    int run;                /* -run: interpretar el codigo intermedio */
 } Options;
 
 static void usage(FILE *out)
@@ -65,7 +69,9 @@ static void usage(FILE *out)
         "  -o <output>      write the output to <output>\n"
         "  -target <stage>  compile up to <stage> (available: scan, parse, sem,\n"
         "                   codinter; default: codinter)\n"
-        "  -debug           print debugging information\n");
+        "  -debug           print debugging information\n"
+        "  -run             run the generated intermediate code (target codinter)\n"
+        "                   and print the value returned by main\n");
 }
 
 static int has_extension(const char *name, const char *ext)
@@ -97,6 +103,7 @@ static int parse_args(int argc, char **argv, Options *opt)
     opt->output = NULL;
     opt->target = "codinter";       /* por defecto: hasta la etapa actual */
     opt->debug = 0;
+    opt->run = 0;
 
     for (int i = 1; i < argc; i++) {
         const char *a = argv[i];
@@ -118,6 +125,8 @@ static int parse_args(int argc, char **argv, Options *opt)
                 opt->target = argv[++i];
         } else if (strcmp(a, "-debug") == 0) {
             opt->debug = 1;
+        } else if (strcmp(a, "-run") == 0) {
+            opt->run = 1;
         } else {
             fprintf(stderr, "c-tds: unknown option '%s'\n", a);
             return 0;
@@ -133,7 +142,13 @@ static int parse_args(int argc, char **argv, Options *opt)
                 opt->input, SOURCE_EXT);
         return 0;
     }
-    return check_target(opt->target);
+    if (!check_target(opt->target))
+        return 0;
+    if (opt->run && strcmp(opt->target, "codinter") != 0) {
+        fprintf(stderr, "c-tds: option '-run' requires -target codinter\n");
+        return 0;
+    }
+    return 1;
 }
 
 /* Ruta del archivo de salida: la de -o si se dio; si no, el nombre del fuente
@@ -371,6 +386,19 @@ static int run_sem(const Options *opt)
     return status;
 }
 
+/* -run: ejecuta el codigo intermedio desde main. Si main devuelve un valor lo
+ * imprime en una linea por stdout (un boolean sale como 1 o 0). */
+static int run_program(const IrProgram *prog)
+{
+    int has_value, value;
+
+    if (interp_run(prog, &has_value, &value) != 0)
+        return EXIT_SRC_ERROR;          /* error de ejecucion, ya informado */
+    if (has_value)
+        printf("%d\n", value);
+    return EXIT_OK;
+}
+
 /* Etapa codinter: front end completo y generacion de codigo intermedio; escribe
  * el codigo de tres direcciones en el .ci. El codigo solo se genera si el
  * programa no tiene ningun error (lexico, sintactico ni semantico). */
@@ -392,6 +420,8 @@ static int run_codinter(const Options *opt)
             status = write_output(opt, ".ci", print_ir_cb, prog);
             if (opt->debug)
                 ir_print(stdout, prog);
+            if (opt->run && status == EXIT_OK)
+                status = run_program(prog);
             ir_program_free(prog);
         }
     }
