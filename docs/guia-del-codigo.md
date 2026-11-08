@@ -245,6 +245,7 @@ para que los mensajes lleven solo el nombre del archivo.
 | Función | Qué hace |
 |---------|----------|
 | `ok`, `bad` | Cuentan y muestran un caso aprobado / fallido (con el detalle, por ejemplo el `diff`). |
+| `run_path <dir> <PATH> <args...>` | Como `run`, pero con otro `PATH` (para probar la ausencia de `gcc` o un `gcc` falso). |
 | `run <dir> <args...>` | Ejecuta `c-tds`, guarda `stdout` en `$TMP/stdout`, `stderr` en `$TMP/stderr` y el código de salida en `$status`. |
 | `cli <desc> <exit> <texto> -- <args>` | Verifica un error de uso: código de salida y que `stderr` contenga el texto. |
 
@@ -256,13 +257,17 @@ Grupos de pruebas:
 | Scanner errores | `tests/scanner/errors/` | Código 1, no se genera salida, `stderr` igual al esperado. |
 | Parser válidos | `tests/parser/valid/` | Código 0, nada por pantalla, `.sint` igual al esperado y mismo árbol por `stdout` con `-debug`. |
 | Parser errores | `tests/parser/errors/` | Código 1, no se genera salida, `stderr` igual al esperado. |
-| Unitarios | `tests/unit/` | Corre `test_symtab`, `test_ast`, `test_ir` y `test_interp` (si `UNIT_DIR` está definido, como hace `make test`); cada uno debe terminar con código 0. |
+| Unitarios | `tests/unit/` | Corre `test_symtab`, `test_ast`, `test_ir`, `test_interp` y `test_x86gen` (si `UNIT_DIR` está definido, como hace `make test`); cada uno debe terminar con código 0. |
 | Semántico válidos | `tests/semantic/valid/` | Código 0, nada por pantalla, `.sem` (AST anotado) igual al esperado y mismo AST por `stdout` con `-debug`. |
 | Semántico errores | `tests/semantic/errors/` | Código 1, no se genera salida, `stderr` igual al esperado (mensaje y posición exactos). |
 | Código intermedio válidos | `tests/codinter/valid/` | Código 0, nada por pantalla, `.ci` igual al esperado y mismo código por `stdout` con `-debug`. |
 | Código intermedio errores | `tests/codinter/errors/` | Código 1, no se genera `.ci`, `stderr` igual al esperado (errores de generación y de etapas anteriores). |
 | Intérprete: programas | `tests/codinter/run/` | `-run`: código 0, nada por `stderr` y `stdout` igual al esperado (el valor que devuelve `main`). |
 | Intérprete: errores | `tests/codinter/run_errors/` | `-run`: código 1, nada por `stdout` y `stderr` igual al error de ejecución esperado. |
+| Assembly | `tests/assembly/` | `-target assembly`: código 0, nada por pantalla, `.ass` igual al esperado y mismo assembly por `stdout` con `-debug`. |
+| Ejecutables del intérprete | `tests/codinter/run/` | Cada programa se **compila a ejecutable y se ejecuta**: su código de salida debe ser el valor que da el intérprete, módulo 256. Se omite si no hay Linux x86-64 y `gcc` (variable `NATIVE`). |
+| Ejecutables propios | `tests/native/` | Cada programa se compila a ejecutable y su código de salida debe ser el de su `.expected`. Más un programa grande (3000 sentencias) generado por el script. |
+| Errores de herramientas | (en el script) | Con un `PATH` sin `gcc`, con un `gcc` falso que falla y con uno que termina sin leer la entrada, el compilador informa el error y sale con código 2; `-target assembly` funciona sin `gcc`. |
 | Línea de comandos | (en el script) | Errores de uso, nombres de salida por defecto y con `-o`, y cada target: `-target codinter` genera `.ci`, `-target assembly` genera `.ass`, sin `-target` se genera el ejecutable, `-target sem` genera `.sem`, `-target parse` y `-target scan` siguen funcionando, `-debug` muestra el AST y la traza de la tabla, `-target parse` no corre el análisis semántico, `-run` escribe el `.ci` y ejecuta, y solo vale con `-target codinter`. |
 
 ## 9. `src/types.h` y `src/types.c`
@@ -717,4 +722,31 @@ Funciones internas de `x86gen.c` (todas `static`):
 | `gen_prologue(g, f)` | Reserva el marco; guarda en sus posiciones los parámetros que llegaron en registros; copia los que llegaron por la pila (desde `16(%rbp)`, ...); y pone en 0 las variables locales. |
 | `gen_method(g, f)` | Escribe un método: una línea en blanco, `.globl main` si corresponde, la etiqueta con el encabezado como comentario, el prólogo y las instrucciones. Si el código no termina en un `ret`, agrega un retorno al final. |
 
+## 19. `tests/unit/test_x86gen.c`
+
+Prueba el generador de assembly (`x86gen.c`) directamente: arma programas con la API de `ir.h`, genera el assembly en una cadena
+y compara **con el assembly escrito a mano**. Usa la macro `CHECK(cond)` como los otros unitarios.
+
+Auxiliares: `I(texto)` (una instrucción: 8 espacios de sangría y un salto de línea), `asm_of(p)` (el assembly de un programa en una
+cadena), `with_comment(texto, comentario)` (una línea con su comentario alineado en la columna 32), `has(asm, fragmento)` (indica
+si el assembly contiene el fragmento y, si no, muestra ambos), `count(s, aguja)` (cuenta apariciones) y `gen_f` / `gen_call`, que
+arman un método `f` con parámetros, locales y las instrucciones a probar, o un `main` que llama a otro método con `n` argumentos.
+
+| Función | Qué prueba |
+|---------|------------|
+| `test_minimal_program` | El archivo completo de un programa mínimo, carácter por carácter: comentario inicial, `.text`, `.globl main`, etiqueta con su comentario, prólogo, `ret` de un `main` `void` (que pone `%eax` en 0) y la nota `.note.GNU-stack` final. |
+| `test_globals_and_symbols` | La sección `.data` (`ctds_g: .long 0`), los prefijos `ctds_` de métodos y globales, `main` sin prefijo y como único `.globl`, la línea en blanco entre métodos y que sin globales no haya `.data`. |
+| `test_frame_size` | El tamaño del marco para 0, 1, 2, 3, 8 y 9 posiciones: se redondea a múltiplo de 16 y con 0 no se reserva nada. |
+| `test_prologue_params_and_locals` | Los 6 primeros parámetros se guardan desde `%edi`, `%esi`, `%edx`, `%ecx`, `%r8d`, `%r9d`; el 7.º y el 8.º se copian desde `16(%rbp)` y `24(%rbp)`; las locales empiezan en 0 y van después de los parámetros. |
+| `test_move` | La copia entre constantes, parámetros, locales y globales (acceso `ctds_g(%rip)`). |
+| `test_arithmetic` | `+`, `-` y `*` con operandos que son parámetros, temporales, constantes y globales (`addl`, `subl`, `imull` con memoria o con inmediato). |
+| `test_unary` | `-` unario (`negl`) y `!` (`cmpl $0`, `sete`, `movzbl`). |
+| `test_comparisons` | `<`, `>` y `==` con `cmpl` y `setl` / `setg` / `sete`. |
+| `test_division` | `/` y `%`: `cltd`, el divisor en `%r10d`, la comprobación contra -1 y los dos caminos con sus etiquetas `.Ldiv<n>` / `.Ldiv<n>e` (la segunda división usa `.Ldiv2`). |
+| `test_jumps_and_labels` | `jz` y `jnz` (que cargan el operando, incluso una constante, y usan `testl`), `jmp` y las etiquetas `.L<n>` sin sangría. |
+| `test_calls` | Llamadas con 0, 1, 6, 7, 8 y 9 argumentos: registros, argumentos apilados de derecha a izquierda, relleno de 8 bytes cuando la cantidad en la pila es impar y `addq` para retirarlos. |
+| `test_call_names` | Un método llamado `printf` y una global llamada `exit` llevan el prefijo `ctds_`; `main` se llama sin prefijo. |
+| `test_returns` | `ret` con y sin valor, y que solo el `ret` de `main` ponga `%eax` en 0. |
+| `test_implicit_return` | Un método que termina en una etiqueta recibe un retorno al final (`# (fin del metodo)`), y un `main` vacío devuelve 0. |
+| `test_param_generates_no_code` | `param` solo deja un comentario; los argumentos se cargan en el `call`. |
 

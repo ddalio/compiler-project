@@ -229,3 +229,60 @@ con código 2; un error semántico y un programa con `float` no generan ejecutab
 informa `cannot run 'gcc'` con código 2. Con AddressSanitizer y UBSan no hay errores de memoria sobre los programas de prueba de
 las etapas 1 a 4 por el camino del ejecutable y por el del assembly. Los tests permanentes se agregan en la sección de testing.
 
+## 5. Testing
+
+Los casos están en `tests/assembly/`, `tests/native/` y `tests/unit/` (y se reutilizan los de `tests/codinter/run/`), y los
+ejecuta `tests/run_tests.sh` (`make test`). Los `.expected` están escritos a mano: el assembly se derivó aplicando las decisiones de
+la sección 2 (incluidos el marco de pila, el relleno de alineación y las posiciones de cada valor) y los códigos de salida se
+calcularon a mano, antes de correr nada. Los tests que arman un ejecutable necesitan **Linux x86-64 y `gcc`**; si no están, se omiten
+con un aviso y no cuentan como fallas.
+
+**Unitario del generador (`tests/unit/test_x86gen.c`).** Arma programas con la API del código intermedio y compara el assembly
+generado con el escrito a mano, **una operación por vez**: `MOVE`, `ADD`, `SUB`, `MUL`, `NEG`, `NOT`, `LT`, `GT`, `EQ`, `DIV`, `MOD`,
+`JMP`, `JZ`, `JNZ`, etiquetas, `PARAM`, `CALL` y `RET`. También prueba el marco de pila (tamaños para 0 a 9 posiciones), los
+parámetros (los 6 de los registros y el 7.º y 8.º de la pila), las locales en 0, las llamadas con 0, 1, 6, 7, 8 y 9 argumentos (incluido
+el relleno de alineación), los nombres de símbolos y la estructura del archivo. Son 76 comprobaciones. Las explicaciones de cada función
+están en `guia-del-codigo.md`, sección 19.
+
+**Assembly de programas completos (`tests/assembly/`, el `.expected` es el `.ass`):**
+
+| Caso | Qué cubre |
+|------|-----------|
+| `add` | El ejemplo de la sección 3: una global, un método con dos parámetros y un `main` `void`. |
+| `loop` | Un `while` con locales y temporales: marco de 5 posiciones redondeado a 48, etiquetas `.L1` y `.L2`, comparación, `jz`, `jmp` y `ret` con valor. |
+| `seven_args` | Un método de 7 parámetros (el 7.º se copia desde la pila) y una llamada con 7 argumentos con relleno y `addq $16`. |
+
+**Ejecutables (extremo a extremo):**
+
+- **Los 26 programas de `tests/codinter/run/`** se compilan a ejecutable y se ejecutan. Su código de salida debe ser el valor que da el
+  intérprete **módulo 256**: el intérprete es el oráculo del código nativo. Es el test más importante de la etapa: verifica que el
+  assembly hace lo mismo que el código intermedio (factorial, Fibonacci, Ackermann, Collatz, cortocircuito, orden de evaluación,
+  aritmética que da la vuelta, recursión de 50000 niveles, etc.).
+- **26 programas propios (`tests/native/`)** con el código de salida esperado calculado a mano: funciones de 7, 8 y 9 argumentos y
+  una recursión con 9; una llamada de 7 argumentos como argumento de otra y dentro de una expresión (la pila alineada); métodos y
+  globales con nombres de la biblioteca de C (`printf`, `exit`, `puts`, `malloc`); `INT_MIN / -1` y `INT_MIN % -1`; la división y el resto
+  con negativos; un resultado negativo (`-5` sale como 251) y uno mayor que 255 (300 sale como 44); un `boolean main`; un `main` `void`;
+  una expresión de 60 términos (muchos temporales); un método sin variables; locales que arrancan en 0; el orden de evaluación con una
+  global modificada por un método; globales como argumentos; variables con el mismo nombre en bloques distintos; llamadas encadenadas; y
+  el desborde de 32 bits.
+- **División y resto por cero:** el ejecutable termina con la señal `SIGFPE` y el código de salida es **136** (decisión 19).
+- **Un programa grande**, generado por el script (3000 sentencias, más de 1 MB de assembly): como no entra de una vez en la tubería
+  que lee `gcc`, comprueba que el compilador escribe todo el assembly; el ejecutable debe salir con 3000 módulo 256 = 184.
+
+**Errores de herramientas.** Se simulan con un `PATH` modificado: sin `gcc` el compilador informa `cannot run 'gcc'` y sale con código 2
+sin dejar un ejecutable; con un `gcc` falso que siempre falla informa `gcc failed` con código 2; y con un `gcc` falso que termina **sin leer**
+el assembly de más de 1 MB comprueba que escribir en la tubería no mata al compilador con `SIGPIPE` (código 141) sino que informa el
+error y sale con código 2. Además, `-target assembly` funciona sin `gcc`.
+
+**Línea de comandos:** `-target assembly` genera el `.ass` y no el ejecutable; `-o` con `-target assembly`; sin `-target` se genera el
+ejecutable (y ningún archivo intermedio) y termina con el código esperado.
+
+**Regresión y memoria:** los 183 casos de las etapas 1 a 4 siguen pasando. En total `make test` ejecuta 246 casos y `make test-asan` los
+mismos con AddressSanitizer y UBSan, sin errores de memoria. Se comprobó además que los tests detectan fallas: al cambiar a propósito la
+instrucción de la multiplicación por una suma en el generador, y un código de salida y una etiqueta en dos `.expected`, fallaron el unitario,
+el caso `loop`, y los programas nativos que multiplican; al restaurar todo volvieron a pasar.
+
+**Hallazgos del testing:** los `.expected` de assembly calculados a mano coincidieron con el generador sin cambios, y los 52 programas
+nativos dieron el resultado esperado. El único defecto encontrado fue un error del propio test unitario (verificaba que no hubiera `pushq`
+en una llamada de 6 argumentos, pero el prólogo tiene `pushq %rbp`), corregido en el test.
+

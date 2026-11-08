@@ -97,6 +97,8 @@ Casos de test (cada `.ctds` tiene un `.expected` con la salida esperada):
 | `tests/codinter/errors/` | errores de generación de código (`float`) | mensajes de `stderr` |
 | `tests/codinter/run/` | programas ejecutados con `-run` | `stdout`: el valor que devuelve `main` |
 | `tests/codinter/run_errors/` | errores de ejecución con `-run` | mensajes de `stderr` |
+| `tests/assembly/` | assembly de programas completos | contenido del `.ass` |
+| `tests/native/` | programas compilados a ejecutable (se necesita `gcc`) | código de salida del ejecutable |
 | `tests/unit/` | tests unitarios en C de la tabla de símbolos, los tipos, el AST, el código intermedio y el intérprete | (se ejecutan; no tienen `.expected`) |
 
-Los tests del scanner usan `-target scan`, los del parser `-target parse`, los semánticos `-target sem` y los de código intermedio `-target codinter` (con `-run` para los programas que se ejecutan). Los tests de la interfaz de línea de comandos están en `tests/run_tests.sh`. Los tests unitarios los arma y corre `make test` (el script solo los ejecuta si recibe `UNIT_DIR`).
+Los tests del scanner usan `-target scan`, los del parser `-target parse`, los semánticos `-target sem` y los de código intermedio `-target codinter` (con `-run` para los programas que se ejecutan) y los de código objeto `-target assembly`. Además, los programas de `tests/codinter/run/` y de `tests/native/` se compilan a ejecutable y se ejecutan; ese grupo necesita Linux x86-64 y `gcc` y, si no están, se omite con un aviso. Los tests de la interfaz de línea de comandos están en `tests/run_tests.sh`. Los tests unitarios los arma y corre `make test` (el script solo los ejecuta si recibe `UNIT_DIR`).
