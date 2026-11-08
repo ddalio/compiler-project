@@ -35,6 +35,7 @@ Para estudiar el proyecto: qué hace cada archivo y cada función. Describe el c
 | `src/ast.h`, `src/ast.c` | Árbol Sintáctico Abstracto (AST): estructura, conversión desde el árbol de parsing, impresión y liberación. |
 | `src/symtab.h`, `src/symtab.c` | Tabla de símbolos: pila de niveles con los símbolos (variables, parámetros y métodos) de cada scope. |
 | `src/semantic.h`, `src/semantic.c` | Análisis semántico: recorre el AST con la tabla de símbolos y verifica las reglas de la spec (hoy: nombres y alcance). |
+| `src/ir.h`, `src/ir.c` | Código intermedio (código de tres direcciones): operandos, instrucciones, métodos, impresión y liberación. |
 | `Makefile` | Compila todo y corre los tests. |
 | `tests/run_tests.sh` | Corre todos los casos de test. |
 
@@ -435,4 +436,67 @@ parsing enseguida**, para comprobar que el AST no depende de él. `at(n, line, c
 | `test_block_lists` | Las variables y las sentencias de un bloque van en listas separadas. |
 | `test_print` | Formato exacto de `ast_print`, con y sin tipo calculado. |
 | `test_constructors` | `ast_node`, `ast_leaf`, `ast_kind_name` y `ast_free` (que acepta `NULL`). |
+
+## 14. `src/ir.h` y `src/ir.c`
+
+El **código intermedio** (IR) es una representación lineal del programa, independiente del lenguaje fuente y fácil de
+traducir a assembly. Se usa **código de tres direcciones**: cada instrucción tiene una operación, hasta dos operandos y
+un resultado (`t3 = a + b`). Un programa es la lista de sus variables globales y, por cada método, una lista de
+instrucciones; no hay `if` ni `while`, solo etiquetas y saltos. Un `boolean` es un entero (0 falso, 1 verdadero). Las
+decisiones y el formato de texto están en `etapa-4-codigo-intermedio.md`.
+
+**Operandos.** `Operand` tiene un tipo (`OperandKind`): `OPD_NONE` (sin operando), `OPD_CONST` (constante entera),
+`OPD_VAR` (una variable), `OPD_TEMP` (temporal `t1`, `t2`, ...), `OPD_LABEL` (etiqueta `L1`, ...) y `OPD_FUNC` (nombre de
+un método, solo en las llamadas). `value` guarda la constante o el número del temporal o de la etiqueta; `var`, la variable;
+`name`, el nombre del método.
+
+**Variables.** `IrVar` tiene `name` y `is_global`; las globales se imprimen con prefijo `@` (`@g`) para no confundirlas con
+una local del mismo nombre.
+
+**Instrucciones.** `Instr` tiene `op` (un `IrOp`), `a`, `b` y `result`. Qué campos usa cada operación:
+
+| `IrOp` | Texto en el `.ci` | Campos |
+|--------|-------------------|--------|
+| `IR_MOVE` | `x = a` | `result = a` |
+| `IR_ADD`, `IR_SUB`, `IR_MUL`, `IR_DIV`, `IR_MOD` | `t = a + b` (y `-`, `*`, `/`, `%`) | `result = a (op) b` |
+| `IR_LT`, `IR_GT`, `IR_EQ` | `t = a < b` (y `>`, `==`) | `result` vale 1 o 0 |
+| `IR_NEG`, `IR_NOT` | `t = - a`, `t = ! a` | `result = (op) a` |
+| `IR_LABEL` | `L1:` | `a` = la etiqueta que se define |
+| `IR_JMP` | `jmp L1` | `a` = destino |
+| `IR_JZ`, `IR_JNZ` | `jz a, L1` / `jnz a, L1` | `a` = condición, `b` = destino |
+| `IR_PARAM` | `param a` | `a` = argumento |
+| `IR_CALL` | `t = call f, n` / `call f, n` | `a` = método (`OPD_FUNC`), `b` = cantidad de argumentos, `result` = temporal con el valor devuelto (o `OPD_NONE`) |
+| `IR_RET` | `ret a` / `ret` | `a` = valor devuelto (o `OPD_NONE`) |
+
+**Métodos y programa.** `IrFunc` guarda el nombre, si devuelve valor (`returns_value`), los parámetros y las locales
+(arreglos dinámicos, en orden de declaración), las instrucciones (`code`, `ncode`), la cantidad de temporales usados
+(`ntemps`) y el enlace al método siguiente. `IrProgram` guarda las globales, la lista de métodos y la cantidad de
+etiquetas creadas (`nlabels`). Los arreglos dinámicos empiezan con capacidad 8 y la duplican al llenarse.
+
+| Función | Qué hace |
+|---------|----------|
+| `Operand ir_none(void)`, `ir_const(long long)`, `ir_var(const IrVar *)`, `ir_func(const char *)` | Constructores de operandos. Las etiquetas y los temporales se crean con `ir_new_label` e `ir_new_temp`, que les dan número. |
+| `IrProgram *ir_program_new(void)` | Crea un programa vacío. |
+| `void ir_program_free(IrProgram *prog)` | Libera el programa con todo lo que contiene (variables, métodos e instrucciones). Acepta `NULL`. |
+| `IrVar *ir_add_global(IrProgram *prog, const char *name)` | Agrega una global (el nombre se copia). |
+| `IrFunc *ir_add_func(IrProgram *prog, const char *name, int returns_value)` | Agrega un método al final del programa. |
+| `IrVar *ir_add_param(IrFunc *f, const char *base)`, `ir_add_local(f, base)` | Agregan un parámetro o una variable local. Si el método ya tiene una variable con ese nombre, la nueva se llama `base.2`, `base.3`, ...; así cada variable tiene un nombre **único dentro de su método**. |
+| `Operand ir_new_temp(IrFunc *f)` | Crea el temporal siguiente del método (`t1`, `t2`, ...). |
+| `Operand ir_new_label(IrProgram *prog)` | Crea la etiqueta siguiente del programa (`L1`, `L2`, ...), única en todo el programa. |
+| `void ir_emit(IrFunc *f, IrOp op, Operand a, Operand b, Operand result)` | Agrega una instrucción al final del método. |
+| `void ir_print(FILE *out, const IrProgram *prog)` | Escribe el programa en el formato del `.ci`: las líneas `global`, y por cada método `func nombre(params)`, sus `local`, las instrucciones con 2 espacios de sangría (las etiquetas sin sangría) y `end`, separando con líneas en blanco. |
+
+Funciones internas de `ir.c` (todas `static`):
+
+| Función | Qué hace |
+|---------|----------|
+| `xmalloc`, `xrealloc`, `xstrdup` | Reservan memoria y copian cadenas; si no hay memoria informan y terminan con código 2. |
+| `GROW(arr, n, cap)` | Macro que agranda un arreglo dinámico cuando está lleno. |
+| `make_operand(kind, value)` | Arma un operando con todos sus campos inicializados. |
+| `var_new(name, is_global)` | Crea una variable con el nombre copiado. |
+| `name_taken(f, name)`, `unique_name(f, base)` | Detectan si un nombre ya lo usa un parámetro o una local del método y calculan el nombre único (`base`, `base.2`, ...). |
+| `vars_free(vars, n)` | Libera un arreglo de variables. |
+| `print_operand(out, o)` | Escribe un operando: constante, `@global`, local, `tN`, `LN` o nombre de método. |
+| `operator_text(op)` | Texto del operador de una instrucción aritmética, de comparación o de negación. |
+| `print_instr(out, in)` | Escribe una instrucción en su formato de texto. |
 

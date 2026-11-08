@@ -132,3 +132,45 @@ end
 ```
 
 Cada `jz`/`jmp` sigue las decisiones 7 y 8: `L1` es la etiqueta del `if` sin `else`; `L2` y `L3` son el inicio y el fin del `while`, creadas antes que `L4`, la etiqueta del cortocircuito de `&&`.
+
+## 3. Diseño y decisiones clave
+
+### Representación del código intermedio (`ir.h`, `ir.c`)
+
+Implementa las decisiones 1 a 7 y 16. Un `IrProgram` guarda las variables globales y una lista de `IrFunc`, una por método.
+Cada método guarda sus parámetros, sus locales, sus instrucciones (cuádruplas: operación, dos operandos y un resultado) y la
+cantidad de temporales que usa.
+
+- **Los operandos son valores, no punteros a nodos.** Un `Operand` es una estructura chica que se copia (tipo, valor
+  numérico, variable o nombre de método). Una constante, un temporal, una etiqueta y un método se distinguen por el tipo
+  del operando, y una instrucción no necesita campos distintos para cada uno.
+- **Todas las instrucciones tienen la misma forma** (`op`, `a`, `b`, `result`). La tabla de `ir.h` indica qué campos usa cada
+  operación. Es la representación clásica de cuádruplas y hace que recorrer, imprimir y más adelante traducir sea un
+  `switch` sobre la operación.
+- **Las variables son únicas por método.** `ir_add_param` e `ir_add_local` asignan el nombre: si el método ya tiene una
+  variable con ese nombre, la nueva se llama `x.2`, `x.3`, ... (decisión 6). La regla vive en el TAD y no en el generador,
+  por lo que no puede olvidarse. Si el fuente tuviera una variable llamada `x.2` no hay conflicto posible (un identificador
+  de C-TDS no puede contener un punto), y el nombre `x.2` ya ocupado se resuelve con `x.2.2`.
+- **Los temporales y las etiquetas se numeran en el TAD.** `ir_new_temp` numera por método desde `t1` y deja la cuenta en
+  `ntemps`; `ir_new_label` numera todo el programa desde `L1`. El generador solo pide uno nuevo, así los números salen
+  en el orden en que se crean.
+- **El programa es dueño de todo.** Las variables, las instrucciones y los nombres se liberan con `ir_program_free`. Un
+  `OPD_VAR` guarda un puntero a la `IrVar`, que vive en el programa; un `OPD_FUNC` guarda el nombre del método, que vive
+  en su `IrFunc`.
+- **Dos listas por método, no una global.** Cada método tiene su propia lista de instrucciones, como dice la decisión 2;
+  el recorrido de la etapa siguiente puede procesar un método a la vez y calcular el tamaño de su marco de pila con `nparams`,
+  `nlocals` y `ntemps`.
+- **Los arreglos dinámicos** (globales, parámetros, locales, instrucciones) empiezan con capacidad 8 y la duplican, de
+  modo que agregar es de costo amortizado constante.
+- **`IrFunc.returns_value`** guarda si el método devuelve un valor: lo necesita el intérprete para saber si una llamada
+  deja un resultado y la etapa siguiente para saber qué devolver.
+
+### Verificación
+
+Se probó el TAD con un programa temporal (que no se versiona) que arma con la API el código del ejemplo de la sección 2
+(`fact` y `main` con un `while` y el cortocircuito de `&&`) y lo imprime: el resultado coincide **carácter por carácter**
+con el ejemplo del documento (se comparó con un script). También se verificó que las variables repetidas se nombren
+`x`, `x.2`, `x.3`, que un nombre que ya tiene un punto se resuelva sin colisiones (`x.2.2`), que los contadores de temporales
+y etiquetas sean los esperados y que `ir_program_free(NULL)` sea válido. Sin errores de memoria con AddressSanitizer y UBSan.
+Los tests unitarios permanentes se agregan en la sección de testing.
+
