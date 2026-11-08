@@ -1,0 +1,10 @@
+func main()
+  local t1.2
+  local L1.2
+  t1 = 1 + 2
+  t1.2 = t1
+  t2 = t1.2 * 4
+  L1.2 = t2
+  t3 = L1.2 + t1.2
+  ret t3
+end

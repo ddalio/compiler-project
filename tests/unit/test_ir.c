@@ -119,6 +119,27 @@ static void test_unique_names(void)
     ir_program_free(p);
 }
 
+/* Una variable no puede llamarse como un temporal (t1) ni como una etiqueta (L2):
+ * en el texto del codigo se confundirian. */
+static void test_names_like_temps_and_labels(void)
+{
+    IrProgram *p = ir_program_new();
+    IrFunc *f = ir_add_func(p, "f", 0);
+
+    CHECK(strcmp(ir_add_local(f, "t1")->name, "t1.2") == 0);
+    CHECK(strcmp(ir_add_local(f, "t1")->name, "t1.3") == 0);
+    CHECK(strcmp(ir_add_local(f, "L10")->name, "L10.2") == 0);
+    CHECK(strcmp(ir_add_param(f, "t25")->name, "t25.2") == 0);
+    /* los que solo se parecen no se tocan */
+    CHECK(strcmp(ir_add_local(f, "t")->name, "t") == 0);
+    CHECK(strcmp(ir_add_local(f, "L")->name, "L") == 0);
+    CHECK(strcmp(ir_add_local(f, "T1")->name, "T1") == 0);
+    CHECK(strcmp(ir_add_local(f, "t1x")->name, "t1x") == 0);
+    CHECK(strcmp(ir_add_local(f, "tx1")->name, "tx1") == 0);
+    CHECK(strcmp(ir_add_local(f, "l1")->name, "l1") == 0);
+    ir_program_free(p);
+}
+
 /* ir_emit guarda los campos y los arreglos crecen sin perder datos. */
 static void test_emit_and_growth(void)
 {
@@ -242,6 +263,7 @@ int main(void)
     test_temps_and_labels();
     test_variables();
     test_unique_names();
+    test_names_like_temps_and_labels();
     test_emit_and_growth();
     test_print_all_instructions();
     test_print_layout();

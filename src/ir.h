@@ -125,7 +125,9 @@ IrFunc *ir_add_func(IrProgram *prog, const char *name, int returns_value);
 /* Agrega un parametro o una variable local al metodo y la devuelve. `base` es
  * el nombre del fuente; si el metodo ya tiene un parametro o una local con ese
  * nombre, la nueva se llama base.2, base.3, ... para que cada variable tenga un
- * nombre unico dentro de su metodo. */
+ * nombre unico dentro de su metodo. Lo mismo vale si `base` tiene la forma de
+ * un temporal o de una etiqueta (t1, L2, ...): la variable pasa a llamarse t1.2
+ * o L2.2 para no confundirse con ellos en el texto del codigo. */
 IrVar *ir_add_param(IrFunc *f, const char *base);
 IrVar *ir_add_local(IrFunc *f, const char *base);
 

@@ -1,0 +1,7 @@
+int main() {
+  int t1;
+  int L1;
+  t1 = 1 + 2;
+  L1 = t1 * 4;
+  return L1 + t1;
+}

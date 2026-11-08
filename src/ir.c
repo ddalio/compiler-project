@@ -135,9 +135,28 @@ IrFunc *ir_add_func(IrProgram *prog, const char *name, int returns_value)
     return f;
 }
 
-/* Indica si el metodo ya tiene un parametro o una local con ese nombre. */
+/* Indica si `name` tiene la forma de un temporal (t1, t2, ...) o de una etiqueta
+ * (L1, L2, ...): una variable no puede llamarse asi porque en el texto del
+ * codigo intermedio se confundiria con ellos. */
+static int looks_like_temp_or_label(const char *name)
+{
+    if (name[0] != 't' && name[0] != 'L')
+        return 0;
+    if (name[1] == '\0')
+        return 0;
+    for (const char *c = name + 1; *c; c++)
+        if (*c < '0' || *c > '9')
+            return 0;
+    return 1;
+}
+
+/* Indica si el nombre no se puede usar para una variable del metodo: porque ya
+ * hay un parametro o una local con ese nombre, o porque se parece a un
+ * temporal o a una etiqueta. */
 static int name_taken(const IrFunc *f, const char *name)
 {
+    if (looks_like_temp_or_label(name))
+        return 1;
     for (int i = 0; i < f->nparams; i++)
         if (strcmp(f->params[i]->name, name) == 0)
             return 1;
@@ -147,8 +166,9 @@ static int name_taken(const IrFunc *f, const char *name)
     return 0;
 }
 
-/* Nombre unico dentro del metodo: `base`, o base.2, base.3, ... Hay que
- * liberarlo con free. */
+/* Nombre unico dentro del metodo: `base`, o base.2, base.3, ... (tambien cuando
+ * `base` se parece a un temporal o a una etiqueta, como t1 o L2: pasa a ser
+ * t1.2 o L2.2). Hay que liberarlo con free. */
 static char *unique_name(const IrFunc *f, const char *base)
 {
     size_t len;
