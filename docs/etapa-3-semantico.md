@@ -265,7 +265,7 @@ mezclar ruido de otra etapa. Sin `-debug`, una compilación exitosa no imprime n
 
 ### Cambios en las etapas anteriores
 
-- **Target por defecto:** pasó de `parse` a `sem`. `-target scan` y `-target parse` se comportan igual que antes.
+- **Target por defecto:** pasó de `parse` a `sem` _(actualización etapa 4: hoy el por defecto es `codinter`; `-target sem` sigue generando el `.sem` igual)_. `-target scan` y `-target parse` se comportan igual que antes.
 - **Tests:** los casos de las etapas 1 y 2 ya pasaban `-target` explícito, salvo el que probaba el nombre de salida
   por defecto del parser (`.sint`); ahora usa `-target parse`. Los 62 casos siguen pasando.
 - **`parse_source`:** se extrajo de `run_parse` la lectura con scanner y parser para compartirla con `run_sem`. El

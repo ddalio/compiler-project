@@ -20,6 +20,7 @@ Para estudiar el proyecto: qué hace cada archivo y cada función. Describe el c
 
   Etapa 3: árbol de parsing ──► ast.c: ast_from_tree() ──► AST
            semantic.c: semantic_analyze(AST, tabla de símbolos) ──► main.c: run_sem() ──► archivo.sem  (target sem)
+  Etapa 4: AST anotado + tabla de símbolos ──► irgen.c: irgen_generate() ──► ir.c: ir_print() ──► archivo.ci  (target codinter)
 ```
 
 | Archivo | Para qué sirve |
@@ -191,16 +192,21 @@ memoria), `parse_root`, `yyerror` y, vía `bison.tab.h`, `yydebug`.
 |---------|----------|
 | `static void usage(FILE *out)` | Imprime la ayuda de uso. |
 | `static int has_extension(const char *name, const char *ext)` | Indica si `name` termina en `ext` y tiene algo antes (por eso `.ctds` solo no vale). |
-| `static int check_target(const char *target)` | Acepta `scan`, `parse` y `sem`; para `codinter` y `assembly` informa "not available yet" y para cualquier otro "unknown target". (`sem` es el análisis semántico: la cátedra lo ejecuta como parte de la compilación y le asigna la extensión `.sem`, pero no lo lista entre los targets.) |
-| `static int parse_args(int argc, char **argv, Options *opt)` | Recorre los argumentos y completa `Options`: `-o` y `-target` toman el argumento siguiente, `-debug` es una bandera y cualquier otro argumento que empiece con `-` es una opción desconocida (por eso un archivo no puede empezar con `-`). Valida que haya un solo archivo de entrada, que termine en `.ctds` y que el target sea válido. El target por defecto es `sem`, la etapa actual. |
+| `static int check_target(const char *target)` | Acepta `scan`, `parse`, `sem` y `codinter`; para `assembly` informa "not available yet" y para cualquier otro "unknown target". (`sem` es el análisis semántico: la cátedra lo ejecuta como parte de la compilación y le asigna la extensión `.sem`, pero no lo lista entre los targets.) |
+| `static int parse_args(int argc, char **argv, Options *opt)` | Recorre los argumentos y completa `Options`: `-o` y `-target` toman el argumento siguiente, `-debug` es una bandera y cualquier otro argumento que empiece con `-` es una opción desconocida (por eso un archivo no puede empezar con `-`). Valida que haya un solo archivo de entrada, que termine en `.ctds` y que el target sea válido. El target por defecto es `codinter`, la etapa actual. |
 | `static char *output_path(const Options *opt, const char *stage_ext)` | Calcula el archivo de salida: el de `-o` si se dio; si no, el del fuente cambiando `.ctds` por la extensión de la etapa (`.lex`, `.sint`). Devuelve memoria que hay que liberar con `free`. |
 | `static FILE *open_input(const Options *opt)` | Abre el fuente; si falla informa el motivo. |
 | `static int write_failed(const char *path)` | Informa que no se pudo escribir la salida y devuelve el código 2. |
 | `static int run_scan(const Options *opt)` | Etapa scan: llama a `yylex` en un bucle, acumula `línea:columna NOMBRE lexema` en memoria (`open_memstream`) y libera la hoja de cada token. Si no hubo errores léxicos escribe el `.lex`; con `-debug` imprime las líneas por `stdout`. |
 | `static int parse_source(const Options *opt, int trace)` | Lee el fuente con el scanner y el parser (lo usan `run_parse` y `run_sem`). Devuelve el resultado de `yyparse` (0 correcto, 1 error sintáctico, 2 sin memoria) o -1 si no se pudo abrir el archivo. Si devuelve 0, `parse_root` es el árbol de parsing y el que llama debe liberarlo; con errores léxicos también devuelve 0, así que hay que mirar `lex_errors`. `trace` activa la traza de bison. |
 | `static int run_parse(const Options *opt)` | Etapa parse: llama a `parse_source` (con la traza de bison si hay `-debug`) y, si no hubo errores ni sintácticos ni léxicos, escribe el árbol en el `.sint`. Con `-debug` también lo imprime por `stdout`. Libera el árbol al final. |
-| `static int run_sem(const Options *opt)` | Etapa sem: llama a `parse_source`; si hubo errores léxicos o sintácticos termina con código 1 **sin correr el análisis semántico**. Si no, convierte el árbol de parsing en AST (`ast_from_tree`) y lo libera, crea la tabla de símbolos (con traza por `stderr` si hay `-debug`), corre `semantic_analyze` y, si no hubo errores, escribe el AST anotado en el `.sem`. Con `-debug` imprime el AST por `stdout`. Libera la tabla y el AST al final. |
-| `int main(int argc, char **argv)` | Interpreta los argumentos y llama a `run_scan`, `run_parse` o `run_sem` según el target. |
+| `Front`, `static void front_free(Front *f)` | `Front` agrupa el resultado del front end: el AST analizado, **la tabla de símbolos con la que se lo analizó** y la cantidad de errores semánticos. La tabla tiene que seguir viva mientras se use el AST (sus nodos referencian símbolos); `front_free` libera las dos cosas. |
+| `static int run_front(const Options *opt, int trace, Front *f)` | Front end completo, común a los targets `sem` y `codinter`: llama a `parse_source`; si hubo errores léxicos o sintácticos devuelve el código 1 **sin correr el análisis semántico**; si no, convierte el árbol de parsing en AST (`ast_from_tree`) y lo libera, crea la tabla de símbolos (con traza por `stderr` si `trace`) y corre `semantic_analyze`. Devuelve `EXIT_OK` si llegó a correr el análisis semántico: entonces `f` tiene el AST, la tabla y la cantidad de errores y el que llama debe liberarlos con `front_free`. |
+| `static int write_output(opt, stage_ext, print, what)` | Abre el archivo de salida (el de `-o` o el del fuente con la extensión de la etapa), escribe ahí lo que produce la función `print` y lo cierra, informando si no se pudo. Lo usan `run_sem` y `run_codinter`. |
+| `print_ast_cb`, `print_ir_cb` | Adaptan `ast_print` e `ir_print` a la firma que espera `write_output`. |
+| `static int run_sem(const Options *opt)` | Etapa sem: corre el front end y, si no hubo errores semánticos, escribe el AST anotado en el `.sem`. Con `-debug` imprime el AST por `stdout` y la traza de la tabla por `stderr`. |
+| `static int run_codinter(const Options *opt)` | Etapa codinter: corre el front end y, solo si no hubo ningún error, llama a `irgen_generate` (que devuelve `NULL` si el programa usa `float`) y escribe el código de tres direcciones en el `.ci`. Con `-debug` lo imprime también por `stdout`. La tabla de símbolos y el AST se liberan recién **después** de generar el código. |
+| `int main(int argc, char **argv)` | Interpreta los argumentos y llama a `run_scan`, `run_parse`, `run_sem` o `run_codinter` según el target. |
 
 Códigos de salida: 0 correcto, 1 errores en el programa fuente (léxicos o sintácticos), 2 error de uso o de
 archivos.
@@ -241,7 +247,7 @@ Grupos de pruebas:
 | Unitarios | `tests/unit/` | Corre `test_symtab` y `test_ast` (si `UNIT_DIR` está definido, como hace `make test`); cada uno debe terminar con código 0. |
 | Semántico válidos | `tests/semantic/valid/` | Código 0, nada por pantalla, `.sem` (AST anotado) igual al esperado y mismo AST por `stdout` con `-debug`. |
 | Semántico errores | `tests/semantic/errors/` | Código 1, no se genera salida, `stderr` igual al esperado (mensaje y posición exactos). |
-| Línea de comandos | (en el script) | Errores de uso, nombres de salida por defecto y con `-o`, y cada target: el por defecto (`sem`) genera `.sem`, `-target parse` y `-target scan` siguen funcionando, `-debug` muestra el AST y la traza de la tabla, y `-target parse` no corre el análisis semántico. |
+| Línea de comandos | (en el script) | Errores de uso, nombres de salida por defecto y con `-o`, y cada target: `-target sem` genera `.sem`, `-target parse` y `-target scan` siguen funcionando, `-debug` muestra el AST y la traza de la tabla, y `-target parse` no corre el análisis semántico. |
 
 ## 9. `src/types.h` y `src/types.c`
 

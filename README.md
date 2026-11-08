@@ -2,9 +2,9 @@
 
 Taller de Diseño de Software (Cod. 3306) - DC - FCEFQyN - UNRC - 2026
 
-**Estado:** Etapas 1 (léxico), 2 (sintáctico) y 3 (semántico) terminadas.
+**Estado:** Etapas 1 (léxico), 2 (sintáctico) y 3 (semántico) terminadas. Etapa 4 (código intermedio) en desarrollo.
 
-Documentación: [etapa 1](docs/etapa-1-lexico.md), [etapa 2](docs/etapa-2-sintactico.md), [etapa 3](docs/etapa-3-semantico.md). Para estudiar el código (qué hace cada archivo y cada función): [guía del código](docs/guia-del-codigo.md).
+Documentación: [etapa 1](docs/etapa-1-lexico.md), [etapa 2](docs/etapa-2-sintactico.md), [etapa 3](docs/etapa-3-semantico.md), [etapa 4](docs/etapa-4-codigo-intermedio.md). Para estudiar el código (qué hace cada archivo y cada función): [guía del código](docs/guia-del-codigo.md).
 
 ## Requisitos
 
@@ -32,7 +32,7 @@ make clean    # borra el ejecutable y la carpeta build/
 | Opción | Acción |
 |--------|--------|
 | `-o <salida>` | nombre del archivo de salida |
-| `-target <etapa>` | etapa hasta la que se compila: `scan`, `parse` o `sem` (por defecto `sem`, la etapa actual) |
+| `-target <etapa>` | etapa hasta la que se compila: `scan`, `parse`, `sem` o `codinter` (por defecto `codinter`, la etapa actual) |
 | `-debug` | imprime información de depuración |
 
 Salida de cada etapa:
@@ -42,20 +42,24 @@ Salida de cada etapa:
 | `scan` | `<nombre>.lex` | un token por línea: `línea:columna NOMBRE lexema` |
 | `parse` | `<nombre>.sint` | árbol de parsing, un nodo por línea con 2 espacios de sangría por nivel |
 | `sem` | `<nombre>.sem` | AST anotado: un nodo por línea; las expresiones muestran su tipo y los identificadores la clase de símbolo (`id x : int [variable]`) |
+| `codinter` | `<nombre>.ci` | código de tres direcciones: variables globales y, por método, `func nombre(params)`, sus variables locales, las instrucciones (`t1 = a + b`, `jz t1, L1`, `param`, `call`, `ret`) y `end` |
 
 Con `-debug` se imprime ese mismo contenido por pantalla; además, en `parse` la traza del parser sale por `stderr` y en `sem` la traza de la tabla de símbolos.
+
+El código intermedio no soporta números reales: un programa con `float` es válido para `-target sem` pero se rechaza con `codegen error` al generar código.
 
 Ejemplos:
 
 ```
-./c-tds programa.ctds                  # análisis completo: genera programa.sem
-./c-tds -o ast.sem programa.ctds       # genera ast.sem
+./c-tds programa.ctds                  # compilación hasta código intermedio: genera programa.ci
+./c-tds -o codigo.ci programa.ctds     # genera codigo.ci
+./c-tds -target sem programa.ctds      # solo hasta el análisis semántico: genera programa.sem
 ./c-tds -target parse programa.ctds    # solo hasta el parser: genera programa.sint
 ./c-tds -target scan programa.ctds     # solo el scanner: genera programa.lex
-./c-tds -debug programa.ctds           # además imprime el AST anotado
+./c-tds -debug programa.ctds           # además imprime el código intermedio
 ```
 
-Sin `-debug`, una compilación exitosa no imprime nada. Los errores léxicos, sintácticos y semánticos se
+Sin `-debug`, una compilación exitosa no imprime nada. Los errores léxicos, sintácticos, semánticos y de generación de código se
 informan por `stderr` como `archivo:línea:columna: ...` y, si los hay, no se genera el archivo de salida. El análisis
 semántico solo corre si el programa no tiene errores léxicos ni sintácticos.
 

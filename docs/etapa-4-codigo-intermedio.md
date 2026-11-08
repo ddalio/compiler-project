@@ -209,3 +209,46 @@ global del mismo nombre (`@x`), y cortocircuito anidado (`true && (false || b) &
 rechaza con un error por cada aparición y las posiciones correctas. Sin errores de memoria con AddressSanitizer y UBSan.
 Los tests permanentes se agregan en la sección de testing.
 
+## 4. Detalles de implementación
+
+### Integración en el compilador (`main.c`)
+
+El target `codinter` reutiliza el front end del target `sem`. Para no duplicarlo, se extrajo de `run_sem` la función
+`run_front`, que hace la lectura (scanner y parser), la conversión a AST y el análisis semántico, y la estructura `Front`,
+que guarda el resultado: el **AST**, la **tabla de símbolos** y la cantidad de errores semánticos. `run_sem` y
+`run_codinter` son ahora dos usos del mismo front end:
+
+1. **Front end** (`run_front`): si hubo errores léxicos o sintácticos, termina con código 1 sin correr el análisis
+   semántico (decisión 10 de la etapa 3).
+2. **Si hubo errores semánticos**, termina con código 1 y no genera código (decisión 17).
+3. **Generación** (`irgen_generate`): si el programa usa `float`, informa un error por cada aparición y devuelve `NULL`; el
+   compilador termina con código 1 y no genera `.ci` (decisión 12).
+4. **Salida**: el código se escribe en `<fuente>.ci` (o en el archivo de `-o`) con `ir_print`.
+5. **Liberación**: la tabla de símbolos y el AST se liberan **después** de generar el código, porque el generador usa los
+   símbolos del AST. Antes, `run_sem` los liberaba al terminar el análisis.
+
+Con `-debug`, `codinter` imprime el código también por `stdout` (decisión 17). Sin `-debug`, una compilación exitosa no
+imprime nada. La traza de la tabla de símbolos solo se activa con `-target sem`, para no mezclar ruido de otra etapa.
+
+La escritura de la salida se factorizó en `write_output`, que recibe la función que produce el contenido (`ast_print` o
+`ir_print`, adaptadas con dos funciones chicas porque tienen distinto tipo de argumento). Así `.sem` y `.ci` se escriben
+con el mismo código.
+
+### Cambios en las etapas anteriores
+
+- **Target por defecto:** pasó de `sem` a `codinter`. Los targets `scan`, `parse` y `sem` se comportan igual que antes.
+- **`-target codinter` ya no se rechaza.** El test de la línea de comandos que verificaba el mensaje "not available yet"
+  ahora usa `-target assembly`, que sigue sin estar disponible.
+- **Tests de la etapa 3:** los que dependían del target por defecto (el nombre de salida por defecto del `.sem` y la prueba de
+  `-debug`) ahora pasan `-target sem` explícito. Los 119 casos siguen pasando.
+
+### Verificación de la integración
+
+Se probó el compilador completo con el ejemplo de la sección 2: el `.ci` generado con el target por defecto es **idéntico** al
+código esperado. También con `-o`, con `-debug` (el código sale por `stdout`), con un programa con `float` (dos errores,
+sin `.ci`, mientras que con `-target sem` el mismo programa es válido), con un error semántico y con uno sintáctico (no se
+genera código), con `scan`, `parse` y `sem`, y con `assembly` (rechazado). Además se corrió el compilador con
+AddressSanitizer y UBSan sobre todos los programas de prueba de las etapas 1 a 3, con y sin `-debug`: sin errores de memoria,
+lo que confirma que la tabla de símbolos se libera después de usar el AST. Los tests permanentes se agregan en la sección
+de testing.
+
