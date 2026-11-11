@@ -1,0 +1,4 @@
+func main()
+  local r
+  ret 1
+end

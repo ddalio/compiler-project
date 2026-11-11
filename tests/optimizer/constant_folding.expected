@@ -1,0 +1,5 @@
+func main()
+  local x
+  local y
+  ret 24
+end

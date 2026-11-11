@@ -1,0 +1,5 @@
+boolean main() {
+  boolean r;
+  r = true && false;
+  return r || true;
+}

@@ -1,0 +1,11 @@
+func main()
+  local x
+  x = 1
+  x = 2
+  jmp L4
+  x = 3
+  jmp L4
+  x = 4
+L4:
+  ret x
+end

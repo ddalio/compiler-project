@@ -1,0 +1,8 @@
+int g;
+int h() { g = 5; return 1; }
+int main() {
+  g = 3;
+  g = g + h();
+  h();
+  return g;
+}

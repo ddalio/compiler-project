@@ -1,0 +1,8 @@
+global @g
+
+func main()
+  local x
+  local y
+  @g = 14
+  ret 14
+end

@@ -1,0 +1,13 @@
+func f(n)
+  t1 = n + 1
+  ret t1
+end
+
+func main()
+  local unused
+  param 1
+  call f, 1
+  param 2
+  call f, 1
+  ret 3
+end

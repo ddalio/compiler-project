@@ -1,0 +1,10 @@
+int g;
+int main() {
+  int x;
+  int y;
+  x = 2 + 3 * 4;
+  y = x;
+  if (y == 14) { g = y + 0; } else { g = 99; }
+  while (false) { g = g + 1; }
+  return g * 1 + (x - x);
+}

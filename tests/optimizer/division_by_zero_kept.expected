@@ -1,0 +1,6 @@
+func main()
+  local z
+  local unused
+  t1 = 10 / 0
+  ret 1
+end

@@ -1,0 +1,16 @@
+func main()
+  local i
+  local s
+  i = 0
+  s = 0
+L1:
+  t1 = i < 3
+  jz t1, L2
+  t2 = s + i
+  s = t2
+  t3 = i + 1
+  i = t3
+  jmp L1
+L2:
+  ret s
+end

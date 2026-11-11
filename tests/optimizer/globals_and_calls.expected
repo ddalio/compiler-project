@@ -1,0 +1,15 @@
+global @g
+
+func h()
+  @g = 5
+  ret 1
+end
+
+func main()
+  @g = 3
+  t1 = call h, 0
+  t2 = 3 + t1
+  @g = t2
+  call h, 0
+  ret @g
+end

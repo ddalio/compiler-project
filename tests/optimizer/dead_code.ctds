@@ -1,0 +1,8 @@
+int f(int n) { return n + 1; }
+int main() {
+  int unused;
+  unused = f(1) * 2;
+  f(2);
+  return 3;
+  return 4;
+}

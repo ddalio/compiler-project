@@ -1,0 +1,11 @@
+func main()
+  local x
+  local y
+  t1 = 12
+  t2 = 2 + t1
+  x = t2
+  t3 = x * 2
+  y = t3
+  t4 = y - 4
+  ret t4
+end

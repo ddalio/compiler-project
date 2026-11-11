@@ -9,6 +9,14 @@
 #                                    (codigo de salida 0, nada por stdout/stderr)
 #   tests/scanner/errors/*.ctds   -> <caso>.expected = stderr esperado
 #                                    (codigo de salida 1, sin archivo de salida)
+# Etapa 6 (optimizador):
+#   tests/optimizer/*.ctds  -> <caso>.expected = codigo optimizado esperado
+#       (-target opt, todas las optimizaciones) y <caso>.<optimizacion>.expected
+#       = el esperado con solo esa optimizacion. Escritos a mano.
+#   Equivalencia: los programas de tests/codinter/run, run_errors, native y
+#       optimizer dan lo mismo sin optimizar y con cada -opt (interprete y, si
+#       hay gcc, ejecutable nativo).
+#   Opcion -opt de la linea de comandos y tests/unit/test_flow.c, test_opt.c.
 # Etapa 5 (codigo objeto):
 #   tests/assembly/*.ctds   -> <caso>.expected = assembly esperado (-target assembly)
 #   tests/native/*.ctds     -> <caso>.expected = codigo de salida del ejecutable
@@ -340,7 +348,7 @@ if [ $NATIVE -eq 1 ]; then
             bad "$name" "no se pudo compilar (exit $status): $(cat "$TMP/stderr")"
             continue
         fi
-        "$TMP/native/n_$name" > /dev/null 2>&1
+        { "$TMP/native/n_$name" > /dev/null 2>&1; } 2>/dev/null
         got=$?
         if [ $got -eq "$want" ]; then
             ok "$name (sale con $got)"
@@ -372,6 +380,93 @@ if [ $NATIVE -eq 1 ]; then
     else
         bad "programa grande" "no se pudo compilar (exit $status): $(cat "$TMP/stderr")"
     fi
+else
+    echo "  (omitidos: necesitan Linux x86-64 y gcc)"
+fi
+
+echo "== Optimizador: codigo optimizado esperado (-target opt) =="
+# tests/optimizer/<caso>.ctds con <caso>.expected (todas las optimizaciones) y,
+# si hay, <caso>.<optimizacion>.expected (solo esa). Escritos a mano.
+for src in "$ROOT"/tests/optimizer/*.ctds; do
+    name="$(basename "$src" .ctds)"
+    for expected in "$ROOT/tests/optimizer/$name.expected" "$ROOT"/tests/optimizer/"$name".*.expected; do
+        [ -f "$expected" ] || continue
+        which="$(basename "$expected" .expected)"; which="${which#"$name"}"; which="${which#.}"
+        if [ -z "$which" ]; then label="$name"; args=(-target opt); else label="$name ($which)"; args=(-opt "$which" -target opt); fi
+        run "$ROOT/tests/optimizer" "${args[@]}" -o "$TMP/o.opt" "$name.ctds"
+        if [ $status -ne 0 ] || [ -s "$TMP/stdout" ] || [ -s "$TMP/stderr" ]; then
+            bad "$label" "exit $status; stdout/stderr deberian estar vacios: $(cat "$TMP/stderr")"
+        elif ! diff -u "$expected" "$TMP/o.opt" > "$TMP/diff"; then
+            bad "$label" "$(cat "$TMP/diff")"
+        else
+            # Con -debug el mismo codigo sale por stdout y las estadisticas por stderr.
+            run "$ROOT/tests/optimizer" "${args[@]}" -debug -o "$TMP/o2.opt" "$name.ctds"
+            if [ $status -eq 0 ] && diff -q "$expected" "$TMP/stdout" > /dev/null && diff -q "$expected" "$TMP/o2.opt" > /dev/null; then
+                ok "$label"
+            else
+                bad "$label (-debug)" "exit $status"
+            fi
+        fi
+    done
+done
+
+echo "== Optimizador: el programa optimizado hace lo mismo (interprete) =="
+# Cada programa de las carpetas de abajo se interpreta sin optimizar y con cada
+# optimizacion (sola y con all): debe dar la misma salida, el mismo mensaje de
+# error de ejecucion y el mismo codigo de salida.
+opt_variants="all fold propagate dce jumps temps"
+for dir in codinter/run codinter/run_errors native optimizer; do
+    for src in "$ROOT/tests/$dir"/*.ctds; do
+        name="$(basename "$src" .ctds)"
+        run "$ROOT/tests/$dir" -run -o "$TMP/eq.ci" "$name.ctds"
+        base_status=$status
+        cp "$TMP/stdout" "$TMP/base_stdout"; cp "$TMP/stderr" "$TMP/base_stderr"
+        diffs=""
+        for v in $opt_variants; do
+            run "$ROOT/tests/$dir" -run -opt "$v" -o "$TMP/eq.ci" "$name.ctds"
+            if [ $status -ne $base_status ] || ! cmp -s "$TMP/stdout" "$TMP/base_stdout" ||
+               ! cmp -s "$TMP/stderr" "$TMP/base_stderr"; then
+                diffs="$diffs $v"
+            fi
+        done
+        if [ -z "$diffs" ]; then
+            ok "$dir/$name (6 variantes iguales a sin optimizar)"
+        else
+            bad "$dir/$name" "distinto con -opt:$diffs (sin optimizar: exit $base_status, stdout $(cat "$TMP/base_stdout"))"
+        fi
+    done
+done
+
+echo "== Optimizador: el ejecutable optimizado hace lo mismo (codigo nativo) =="
+if [ $NATIVE -eq 1 ]; then
+    mkdir -p "$TMP/eqnat"
+    for dir in codinter/run native optimizer; do
+        for src in "$ROOT/tests/$dir"/*.ctds; do
+            name="$(basename "$src" .ctds)"
+            # En optimizer/ se prueban tambien las optimizaciones de a una.
+            if [ "$dir" = optimizer ]; then variants="all fold propagate dce jumps temps"; else variants="all"; fi
+            run "$ROOT/tests/$dir" -o "$TMP/eqnat/base" "$name.ctds"
+            if [ $status -ne 0 ]; then
+                bad "$dir/$name" "no se pudo compilar sin optimizar (exit $status): $(cat "$TMP/stderr")"
+                continue
+            fi
+            { "$TMP/eqnat/base" > "$TMP/eqnat/base.out" 2>&1; } 2>/dev/null; base_got=$?
+            diffs=""
+            for v in $variants; do
+                run "$ROOT/tests/$dir" -opt "$v" -o "$TMP/eqnat/opt" "$name.ctds"
+                if [ $status -ne 0 ]; then diffs="$diffs $v(no compila)"; continue; fi
+                { "$TMP/eqnat/opt" > "$TMP/eqnat/opt.out" 2>&1; } 2>/dev/null; got=$?
+                if [ $got -ne $base_got ] || ! cmp -s "$TMP/eqnat/opt.out" "$TMP/eqnat/base.out"; then
+                    diffs="$diffs $v(salio con $got)"
+                fi
+            done
+            if [ -z "$diffs" ]; then
+                ok "$dir/$name (sale con $base_got, igual optimizado)"
+            else
+                bad "$dir/$name" "sin optimizar sale con $base_got; distinto con -opt:$diffs"
+            fi
+        done
+    done
 else
     echo "  (omitidos: necesitan Linux x86-64 y gcc)"
 fi
@@ -645,6 +740,162 @@ if [ "$(uname -s)" = "Linux" ] && [ "$(uname -m)" = "x86_64" ] && command -v gcc
     fi
 else
     echo "  (omitido: el ejecutable necesita Linux x86-64 y gcc)"
+fi
+
+echo "== Optimizador: opcion -opt de la linea de comandos =="
+OPTDIR="$ROOT/tests/optimizer"
+# cliopt <descripcion> <exit esperado> <texto esperado en stderr> -- <args...>
+# (corre sobre un programa valido de tests/optimizer)
+cliopt() {
+    local desc="$1" want_status="$2" want_text="$3"; shift 4
+    run "$OPTDIR" "$@"
+    if [ $status -ne "$want_status" ]; then
+        bad "$desc" "exit code $status (se esperaba $want_status): $(head -n 1 "$TMP/stderr")"
+    elif ! grep -qF -- "$want_text" "$TMP/stderr"; then
+        bad "$desc" "stderr no contiene '$want_text': $(head -n 1 "$TMP/stderr")"
+    else
+        ok "$desc"
+    fi
+}
+
+cliopt "-opt sin argumento"             2 "requires an argument"       -- constant_folding.ctds -opt
+cliopt "-opt con un nombre desconocido" 2 "unknown optimization 'foo'" -- -opt foo constant_folding.ctds
+cliopt "-opt no toma la opcion siguiente como nombre" 2 "unknown optimization '-target'" -- -opt -target opt constant_folding.ctds
+cliopt "-opt con -target scan"          2 "does not apply to -target scan"  -- -opt all -target scan constant_folding.ctds
+cliopt "-opt con -target parse"         2 "does not apply to -target parse" -- -opt all -target parse constant_folding.ctds
+cliopt "-opt con -target sem"           2 "does not apply to -target sem"   -- -opt all -target sem constant_folding.ctds
+cliopt "la lista de nombres validos sale en el error" 2 "fold, propagate, dce, jumps, temps, all" -- -opt foo constant_folding.ctds
+
+# Cada nombre es valido, no imprime nada y escribe el .opt pedido.
+for name in fold propagate dce jumps temps all; do
+    rm -f "$TMP/n.opt"
+    run "$OPTDIR" -opt "$name" -target opt -o "$TMP/n.opt" constant_folding.ctds
+    if [ $status -eq 0 ] && [ ! -s "$TMP/stdout" ] && [ ! -s "$TMP/stderr" ] && [ -s "$TMP/n.opt" ]; then
+        ok "-opt $name -target opt"
+    else
+        bad "-opt $name -target opt" "exit $status: $(cat "$TMP/stderr")"
+    fi
+done
+
+# -target opt sin -opt equivale a -opt all.
+run "$OPTDIR" -target opt -o "$TMP/default.opt" constant_folding.ctds
+run "$OPTDIR" -opt all -target opt -o "$TMP/all.opt" constant_folding.ctds
+if cmp -s "$TMP/default.opt" "$TMP/all.opt" && [ -s "$TMP/all.opt" ]; then
+    ok "-target opt sin -opt = -opt all"
+else
+    bad "-target opt sin -opt = -opt all" "las salidas difieren"
+fi
+
+# -opt repetido y en cualquier orden: lo que importa es el conjunto, no el orden.
+run "$OPTDIR" -opt fold -target opt -o "$TMP/f1.opt" dead_code.ctds
+run "$OPTDIR" -opt fold -opt fold -target opt -o "$TMP/f2.opt" dead_code.ctds
+if [ $status -eq 0 ] && cmp -s "$TMP/f1.opt" "$TMP/f2.opt"; then
+    ok "-opt repetido (fold fold) = fold"
+else
+    bad "-opt repetido (fold fold) = fold" "exit $status"
+fi
+run "$OPTDIR" -opt dce -opt fold -opt propagate -target opt -o "$TMP/o1.opt" constant_folding.ctds
+run "$OPTDIR" -opt propagate -opt fold -opt dce -target opt -o "$TMP/o2.opt" constant_folding.ctds
+if [ $status -eq 0 ] && cmp -s "$TMP/o1.opt" "$TMP/o2.opt"; then
+    ok "-opt en distinto orden: mismo resultado"
+else
+    bad "-opt en distinto orden: mismo resultado" "las salidas difieren"
+fi
+run "$OPTDIR" -opt fold -opt propagate -opt dce -opt jumps -opt temps -target opt -o "$TMP/five.opt" constant_folding.ctds
+if cmp -s "$TMP/five.opt" "$TMP/all.opt"; then
+    ok "las cinco optimizaciones juntas = all"
+else
+    bad "las cinco optimizaciones juntas = all" "las salidas difieren"
+fi
+
+# Sin -opt no se optimiza: el .ci es el de siempre y -debug no habla del optimizador.
+run "$OPTDIR" -target codinter -debug -o "$TMP/plain.ci" constant_folding.ctds
+if [ $status -eq 0 ] && ! grep -qF "[opt]" "$TMP/stderr" && grep -qF "t1 = 3 * 4" "$TMP/plain.ci" &&
+   [ "$(grep -c . "$TMP/plain.ci")" -gt 6 ]; then
+    ok "sin -opt: el codigo no se optimiza y -debug no muestra [opt]"
+else
+    bad "sin -opt: el codigo no se optimiza y -debug no muestra [opt]" "exit $status: $(cat "$TMP/stderr")"
+fi
+
+# -opt all -target codinter: el .ci sale optimizado (mismo codigo que el .opt).
+run "$OPTDIR" -opt all -target codinter -o "$TMP/opt.ci" constant_folding.ctds
+if [ $status -eq 0 ] && cmp -s "$TMP/opt.ci" "$TMP/all.opt"; then
+    ok "-opt all -target codinter: el .ci sale optimizado"
+else
+    bad "-opt all -target codinter: el .ci sale optimizado" "exit $status"
+fi
+
+# -debug: las estadisticas van por stderr, el codigo por stdout.
+run "$OPTDIR" -opt all -target opt -debug -o "$TMP/dbg.opt" constant_folding.ctds
+if [ $status -eq 0 ] && grep -qF "[opt] main: 7 -> 1 instructions, 4 -> 0 temporaries" "$TMP/stderr" &&
+   grep -qF "[opt] total: 7 -> 1 instructions" "$TMP/stderr" && grep -qF "ret 24" "$TMP/stdout"; then
+    ok "-opt -debug: estadisticas por stderr y codigo por stdout"
+else
+    bad "-opt -debug: estadisticas por stderr y codigo por stdout" "exit $status: $(cat "$TMP/stderr")"
+fi
+
+# -run con -opt: el mismo resultado y el .ci escrito es el optimizado.
+run "$OPTDIR" -opt all -run -o "$TMP/run.ci" constant_folding.ctds
+if [ $status -eq 0 ] && [ "$(cat "$TMP/stdout")" = "24" ] && grep -qF "ret 24" "$TMP/run.ci"; then
+    ok "-opt all -run: resultado 24 y .ci optimizado"
+else
+    bad "-opt all -run: resultado 24 y .ci optimizado" "exit $status: $(cat "$TMP/stdout")"
+fi
+
+# Nombre de salida por defecto: <fuente>.opt junto al fuente (y no el .ci).
+mkdir "$TMP/optdef"
+cp "$OPTDIR/constant_folding.ctds" "$TMP/optdef/cf.ctds"
+run "$TMP/optdef" -target opt cf.ctds
+if [ $status -eq 0 ] && [ ! -s "$TMP/stdout" ] && [ ! -s "$TMP/stderr" ] &&
+   [ "$(ls "$TMP/optdef" | tr '\n' ' ')" = "cf.ctds cf.opt " ]; then
+    ok "-target opt: escribe <fuente>.opt junto al fuente"
+else
+    bad "-target opt: escribe <fuente>.opt junto al fuente" "exit $status; archivos: $(ls "$TMP/optdef")"
+fi
+
+# -o no puede apuntar al fuente tampoco con -target opt.
+run "$TMP/optdef" -target opt -o cf.ctds cf.ctds
+if [ $status -eq 2 ] && grep -qF "would overwrite the input file" "$TMP/stderr"; then
+    ok "-target opt: -o no pisa el fuente"
+else
+    bad "-target opt: -o no pisa el fuente" "exit $status: $(cat "$TMP/stderr")"
+fi
+
+# -opt con assembly: el assembly optimizado es mas corto y sin la multiplicacion.
+run "$OPTDIR" -target assembly -o "$TMP/plain.ass" constant_folding.ctds
+run "$OPTDIR" -opt all -target assembly -o "$TMP/opt.ass" constant_folding.ctds
+if [ $status -eq 0 ] && [ "$(wc -l < "$TMP/opt.ass")" -lt "$(wc -l < "$TMP/plain.ass")" ] &&
+   grep -qF "imul" "$TMP/plain.ass" && ! grep -qF "imul" "$TMP/opt.ass"; then
+    ok "-opt all -target assembly: assembly mas corto, sin imul"
+else
+    bad "-opt all -target assembly: assembly mas corto, sin imul" "exit $status"
+fi
+
+# Los errores del programa se informan igual con y sin -opt y no generan salida.
+run "$ROOT/tests/semantic/errors" -opt all -target opt -o "$TMP/never.opt" rule2_undeclared.ctds
+opt_err=$status; cp "$TMP/stderr" "$TMP/opt_stderr"
+run "$ROOT/tests/semantic/errors" -target codinter -o "$TMP/never.ci" rule2_undeclared.ctds
+if [ $opt_err -eq 1 ] && [ $status -eq 1 ] && cmp -s "$TMP/opt_stderr" "$TMP/stderr" && [ ! -e "$TMP/never.opt" ]; then
+    ok "-opt con error semantico: mismo mensaje, sin salida"
+else
+    bad "-opt con error semantico: mismo mensaje, sin salida" "exit $opt_err y $status"
+fi
+run "$ROOT/tests/codinter/errors" -opt all -target opt -o "$TMP/never.opt" float_global.ctds
+if [ $status -eq 1 ] && grep -qF "type 'float' is not supported" "$TMP/stderr" && [ ! -e "$TMP/never.opt" ]; then
+    ok "-opt con un float: se rechaza como sin -opt"
+else
+    bad "-opt con un float: se rechaza como sin -opt" "exit $status: $(cat "$TMP/stderr")"
+fi
+
+# Ejecutable optimizado: sale con el valor del programa.
+if [ $NATIVE -eq 1 ]; then
+    run "$OPTDIR" -opt all -o "$TMP/cf_exe" constant_folding.ctds
+    "$TMP/cf_exe" > /dev/null 2>&1; got=$?
+    if [ $status -eq 0 ] && [ $got -eq 24 ] && [ ! -s "$TMP/stderr" ]; then
+        ok "-opt all (ejecutable): sale con 24"
+    else
+        bad "-opt all (ejecutable): sale con 24" "exit $status, ejecutable $got"
+    fi
 fi
 
 echo
