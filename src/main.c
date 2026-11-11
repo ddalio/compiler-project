@@ -1,15 +1,18 @@
 /*
  * main.c - Interfaz de linea de comandos de c-tds
- *          (Etapas 1 a 5: analisis lexico, sintactico, semantico, generacion de
- *          codigo intermedio y de codigo objeto).
+ *          (Etapas 1 a 6: analisis lexico, sintactico, semantico, generacion de
+ *          codigo intermedio y de codigo objeto, y optimizador).
  *
  *   c-tds [opcion] nombreArchivo.ctds
  *
  *   -o <salida>      nombre del archivo de salida (el ejecutable, o el archivo
  *                    de la etapa si se da -target)
  *   -target <etapa>  detiene la compilacion en una etapa: scan, parse, sem,
- *                    codinter o assembly. Sin -target se hace la compilacion
- *                    completa y se genera el ejecutable <nombre>.out
+ *                    codinter, opt o assembly. Sin -target se hace la
+ *                    compilacion completa y se genera el ejecutable <nombre>.out
+ *   -opt <nombre>    activa una optimizacion del codigo intermedio: fold,
+ *                    propagate, dce, jumps, temps, o all (todas). Se puede
+ *                    repetir. Sin -opt no se optimiza nada
  *   -debug           imprime informacion de depuracion
  *   -run             ejecuta el codigo intermedio generado desde main e imprime
  *                    el valor que devuelve (si devuelve uno); implica
@@ -29,6 +32,8 @@
  *          simbolos por stderr.
  *   codinter  archivo <nombre>.ci con el codigo de tres direcciones (ver ir.h).
  *          -debug imprime ese codigo por stdout.
+ *   opt    archivo <nombre>.opt con el codigo intermedio optimizado (con todas
+ *          las optimizaciones, salvo que se elijan algunas con -opt).
  *   assembly  archivo <nombre>.ass con el assembly x86-64 (ver x86gen.h).
  *          -debug imprime ese assembly por stdout.
  *   (sin -target)  ejecutable <nombre>.out: el assembly se le pasa a gcc, que
@@ -56,6 +61,7 @@
 #include "interp.h"
 #include "ir.h"
 #include "irgen.h"
+#include "opt.h"
 #include "parser.h"
 #include "scanner.h"
 #include "semantic.h"
@@ -74,6 +80,7 @@ typedef struct {
     const char *target;     /* etapa final */
     int debug;
     int run;                /* -run: interpretar el codigo intermedio */
+    unsigned opt_mask;      /* optimizaciones pedidas con -opt (bits de opt.h) */
 } Options;
 
 static void usage(FILE *out)
@@ -83,8 +90,10 @@ static void usage(FILE *out)
         "Options:\n"
         "  -o <output>      write the output (the executable, or the stage file\n"
         "                   when -target is given) to <output>\n"
-        "  -target <stage>  stop at <stage>: scan, parse, sem, codinter or assembly.\n"
-        "                   Without it the executable <file>.out is built\n"
+        "  -target <stage>  stop at <stage>: scan, parse, sem, codinter, opt or\n"
+        "                   assembly. Without it the executable <file>.out is built\n"
+        "  -opt <name>      enable an optimization of the intermediate code: fold,\n"
+        "                   propagate, dce, jumps, temps or all (may be repeated)\n"
         "  -debug           print debugging information\n"
         "  -run             run the generated intermediate code and print the value\n"
         "                   returned by main (implies -target codinter)\n");
@@ -102,7 +111,7 @@ static int has_extension(const char *name, const char *ext)
 static int check_target(const char *target)
 {
     static const char *const known[] = { "scan", "parse", "sem", "codinter",
-                                         "assembly" };
+                                         "opt", "assembly" };
 
     for (size_t i = 0; i < sizeof known / sizeof known[0]; i++)
         if (strcmp(target, known[i]) == 0)
@@ -131,6 +140,7 @@ static int parse_args(int argc, char **argv, Options *opt)
     opt->target = NULL;             /* sin -target: se genera el ejecutable */
     opt->debug = 0;
     opt->run = 0;
+    opt->opt_mask = 0;
 
     for (int i = 1; i < argc; i++) {
         const char *a = argv[i];
@@ -154,6 +164,21 @@ static int parse_args(int argc, char **argv, Options *opt)
             opt->debug = 1;
         } else if (strcmp(a, "-run") == 0) {
             opt->run = 1;
+        } else if (strcmp(a, "-opt") == 0) {
+            unsigned bit;
+
+            if (i + 1 >= argc) {
+                fprintf(stderr, "c-tds: option '-opt' requires an argument (%s)\n",
+                        opt_names());
+                return 0;
+            }
+            bit = opt_from_name(argv[++i]);
+            if (!bit) {
+                fprintf(stderr, "c-tds: unknown optimization '%s' (available: %s)\n",
+                        argv[i], opt_names());
+                return 0;
+            }
+            opt->opt_mask |= bit;
         } else {
             fprintf(stderr, "c-tds: unknown option '%s'\n", a);
             return 0;
@@ -177,6 +202,15 @@ static int parse_args(int argc, char **argv, Options *opt)
         fprintf(stderr, "c-tds: option '-run' requires -target codinter\n");
         return 0;
     }
+    if (opt->target && opt->opt_mask != 0 &&
+        (strcmp(opt->target, "scan") == 0 || strcmp(opt->target, "parse") == 0 ||
+         strcmp(opt->target, "sem") == 0)) {
+        fprintf(stderr, "c-tds: option '-opt' does not apply to -target %s "
+                "(it optimizes the intermediate code)\n", opt->target);
+        return 0;
+    }
+    if (opt->target && strcmp(opt->target, "opt") == 0 && opt->opt_mask == 0)
+        opt->opt_mask = OPT_ALL;        /* -target opt sin -opt: todas */
     if (opt->output && same_file(opt->output, opt->input)) {
         fprintf(stderr, "c-tds: output file '%s' would overwrite the input file\n",
                 opt->output);
@@ -454,13 +488,24 @@ static int build_ir(const Options *opt, Front *f, IrProgram **prog)
         front_free(f);
         return EXIT_SRC_ERROR;
     }
+    if (opt->opt_mask != 0) {
+        OptStats st;
+
+        opt_run(*prog, opt->opt_mask, opt->debug ? stderr : NULL, &st);
+        if (opt->debug)
+            fprintf(stderr, "[opt] total: %d -> %d instructions, %d -> %d "
+                    "temporaries (folded %d, propagated %d, removed %d, "
+                    "jumps %d, %d rounds)\n", st.before, st.after,
+                    st.temps_before, st.temps_after, st.folded, st.propagated,
+                    st.dead, st.jumps, st.rounds);
+    }
     return EXIT_OK;
 }
 
 /* Etapa codinter: front end completo y generacion de codigo intermedio; escribe
  * el codigo de tres direcciones en el .ci. El codigo solo se genera si el
  * programa no tiene ningun error (lexico, sintactico ni semantico). */
-static int run_codinter(const Options *opt)
+static int run_codinter(const Options *opt, const char *ext)
 {
     Front f;
     IrProgram *prog;
@@ -468,7 +513,7 @@ static int run_codinter(const Options *opt)
 
     if (status != EXIT_OK)
         return status;
-    status = write_output(opt, ".ci", print_ir_cb, prog);
+    status = write_output(opt, ext, print_ir_cb, prog);
     if (opt->debug)
         ir_print(stdout, prog);
     if (opt->run && status == EXIT_OK)
@@ -626,6 +671,8 @@ int main(int argc, char **argv)
     if (strcmp(opt.target, "sem") == 0)
         return run_sem(&opt);
     if (strcmp(opt.target, "codinter") == 0)
-        return run_codinter(&opt);
+        return run_codinter(&opt, ".ci");
+    if (strcmp(opt.target, "opt") == 0)
+        return run_codinter(&opt, ".opt");
     return run_assembly(&opt);
 }
