@@ -306,7 +306,10 @@ en una llamada de 6 argumentos, pero el prólogo tiene `pushq %rbp`), corregido 
 - **El código no está optimizado** (a propósito: la cátedra pide corrección y la optimización es la etapa siguiente). Todos los valores
   van a memoria y **cada temporal tiene su propia posición**: un método de 3000 asignaciones `x = x + 1` genera un marco de 3001
   posiciones (24016 bytes) y 21017 líneas de assembly (unos 600 KB). Cada división incluye la comprobación del divisor -1 y cada
-  variable local se inicializa en 0 aunque el programa la asigne enseguida.
+  variable local se inicializa en 0 aunque el programa la asigne enseguida. _(Actualización etapa 6: con `-opt all` el mismo
+  programa de 3000 asignaciones pasa de 21017 a 14 líneas de assembly, porque el optimizador trabaja sobre el código intermedio
+  antes de generar el assembly; sin `-opt` el assembly es el de esta etapa. Lo que sigue igual: cada valor que queda va a memoria,
+  cada temporal que queda tiene su posición y cada división incluye la comprobación del divisor -1.)_
 - **Expresiones larguísimas.** El compilador recorre las expresiones con recursión; una suma `a + a + ... + a` de 20000 términos se compila
   bien y con 30000 el compilador se cae por desborde de su pila (código 139), igual que el límite de la etapa 4. No ocurre con programas
   reales.

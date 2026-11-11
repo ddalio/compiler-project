@@ -15,7 +15,7 @@ decisiones tomadas:
 
 | # | Tema | Decisión |
 |---|------|----------|
-| 1 | Alcance | Solo se implementa el scanner. En esta etapa `-target scan` era el único target disponible; los demás se rechazaban con un mensaje. `-opt` todavía no existe. _(Actualización etapas 2 a 5: se agregaron los targets `parse`, `sem`, `codinter` y `assembly`; sin `-target` se genera hoy el ejecutable. `-target scan` sigue funcionando igual.)_ |
+| 1 | Alcance | Solo se implementa el scanner. En esta etapa `-target scan` era el único target disponible; los demás se rechazaban con un mensaje. `-opt` todavía no existe. _(Actualización etapas 2 a 5: se agregaron los targets `parse`, `sem`, `codinter` y `assembly`; sin `-target` se genera hoy el ejecutable. `-target scan` sigue funcionando igual.)_ _(Actualización etapa 6: existe `-opt <nombre>` y el target `opt`; `-opt` con `scan` es un error de uso porque no hay código intermedio que optimizar, y sin `-opt` nada cambia.)_ |
 | 2 | Identificadores | Exactamente la gramática: `alpha (alpha \| digit \| '_')*`. Un identificador **no puede empezar con `_`**; el `_` suelto es un error léxico. |
 | 3 | Literales reales | Exactamente la gramática: `digit+ '.' digit+`. Ni `1.` ni `.5` son literales: el `.` suelto es un error léxico. |
 | 4 | Literales enteros | Solo dígitos, sin signo: `-5` son dos tokens (`MINUS`, `INT_LITERAL`), como pide la gramática (`- <expr>`). Un entero mayor a 2147483647 es un error léxico. Los ceros a la izquierda se aceptan y valen en decimal (`007` = 7). |

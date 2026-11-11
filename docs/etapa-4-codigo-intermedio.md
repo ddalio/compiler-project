@@ -185,7 +185,7 @@ genera de forma independiente: se agrega al programa, se declaran sus parámetro
   identificador su variable: `x = y + 1` no copia `y` ni `1` a temporales. Solo las operaciones, las llamadas y los
   operadores lógicos producen temporales nuevos.
 - **La asignación es una copia del valor ya calculado**: `x = a + b` genera `t = a + b` y después `x = t`. No se intenta
-  escribir el resultado directo en `x`; eso es una optimización y corresponde a la última etapa.
+  escribir el resultado directo en `x`; eso es una optimización y corresponde a la última etapa. _(Actualización etapa 6: con `-opt`, la propagación de copias y la eliminación de código muerto quitan la copia `x = t` y el temporal cuando no hacen falta; se sigue generando igual y se limpia después.)_
 - **Orden de creación de temporales y etiquetas** (de ello depende la numeración de los tests): una operación evalúa su
   operando izquierdo, después el derecho y *después* pide el temporal del resultado; `&&` y `||` evalúan el izquierdo,
   piden el temporal `r` y la etiqueta de fin y recién entonces evalúan el derecho; un `while` crea sus dos etiquetas
@@ -380,7 +380,9 @@ programas (`names_like_temporaries` en `valid/` y en `run/`). El caso del `ret` 
 - **El código no está optimizado** (a propósito; la optimización es la última etapa): cada asignación de una operación
   genera un temporal y una copia (`t4 = a + b` y después `x = t4`), los temporales no se reutilizan (un método con muchas
   operaciones tiene muchos temporales y, en la etapa siguiente, un marco de pila grande), se genera el código que está
-  después de un `return` y un método `void` que termina con `return;` tiene dos `ret` seguidos.
+  después de un `return` y un método `void` que termina con `return;` tiene dos `ret` seguidos. _(Actualización etapa 6: con
+  `-opt` (`docs/etapa-6-optimizador.md`) se pliegan las constantes, se propagan las copias, se elimina el código muerto y se
+  compactan los temporales; sin `-opt` el código sigue siendo exactamente el de esta etapa.)_
 - **Las variables locales sin inicializar valen 0.** La spec no define su valor inicial; el intérprete las pone en 0 para que la
   ejecución sea determinista. _(Actualización etapa 5: el código nativo también las inicializa en 0 en el prólogo de cada método
   (decisión 9 de la etapa 5), así que el intérprete y los ejecutables se comportan igual; un programa de C equivalente, en
