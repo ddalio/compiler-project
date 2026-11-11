@@ -858,6 +858,33 @@ static void test_all_together(void)
     ir_program_free(p);
 }
 
+/* t1 = 1 + 2; t2 = t1 + 3; ...; t99 = t98 + 100; return t99  (1+2+...+100) */
+static void build_constant_chain(IrProgram *p, IrFunc *f)
+{
+    (void)p;
+    emit(f, IR_ADD, ir_const(1), ir_const(2), T(f, 1));
+    for (int i = 2; i <= 99; i++)
+        emit(f, IR_ADD, T(f, i - 1), ir_const(i + 1), T(f, i));
+    emit(f, IR_RET, T(f, 99), NONE, NONE);
+}
+
+/* Una cadena de 100 constantes se pliega entera, y en pocas vueltas: la
+ * propagacion pliega en el momento (con un tope fijo de 50 vueltas, una vuelta
+ * por eslabon, quedaba a medias). */
+static void test_constant_chain(void)
+{
+    OptStats st;
+    IrProgram *p;
+    char *got = optimize(build_constant_chain, OPT_ALL, &st, &p);
+
+    CHECK_TEXT(got, HDR IN("ret 5050") END);        /* 100 * 101 / 2 */
+    CHECK(st.before == 100 && st.after == 1);
+    CHECK(st.temps_before == 99 && st.temps_after == 0);
+    CHECK(st.rounds <= 3);
+    free(got);
+    ir_program_free(p);
+}
+
 /* Cada optimizacion por separado hace menos que todas juntas. */
 static void test_passes_are_independent(void)
 {
@@ -997,6 +1024,7 @@ int main(void)
     test_temps_without_temporaries();
 
     test_all_together();
+    test_constant_chain();
     test_passes_are_independent();
     test_short_circuit_all();
     test_idempotence();

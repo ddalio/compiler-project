@@ -17,7 +17,11 @@
 #include "flow.h"
 #include "opt.h"
 
-#define MAX_ROUNDS 50           /* tope de seguridad del punto fijo */
+/* Tope de seguridad del punto fijo: MAX_ROUNDS mas una vuelta por cada
+ * instruccion del metodo. Cada vuelta pliega un solo nivel de una cadena de
+ * constantes (1+2, luego 3+3, ...), asi que una suma de n constantes necesita
+ * unas n vueltas; con un tope fijo de 50 quedaba a medias. */
+#define MAX_ROUNDS 50
 
 /* ------------------------------------------------------------- utilidades */
 
@@ -101,6 +105,89 @@ static int compute(IrOp op, long long a, long long b, long long *out)
 
 /* ------------------------------------------------------------------- fold */
 
+/* Pliega una instruccion si se puede: la reemplaza por una copia de una
+ * constante o de uno de sus operandos. Devuelve 1 si la cambio. */
+static int fold_instr(Instr *in)
+{
+    long long v;
+    int folded = 0;
+
+    switch (in->op) {
+    case IR_ADD: case IR_SUB: case IR_MUL: case IR_DIV: case IR_MOD:
+    case IR_LT: case IR_GT: case IR_EQ:
+        if (is_const(in->a) && is_const(in->b) &&
+            compute(in->op, in->a.value, in->b.value, &v)) {
+            make_move(in, ir_const(v));
+            folded = 1;
+            break;
+        }
+        switch (in->op) {
+        case IR_ADD:
+            if (is_const_value(in->b, 0)) {
+                make_move(in, in->a); folded = 1;
+            } else if (is_const_value(in->a, 0)) {
+                make_move(in, in->b); folded = 1;
+            }
+            break;
+        case IR_SUB:
+            if (is_const_value(in->b, 0)) {
+                make_move(in, in->a); folded = 1;
+            } else if (same_location(in->a, in->b)) {
+                make_move(in, ir_const(0)); folded = 1;
+            }
+            break;
+        case IR_MUL:
+            if (is_const_value(in->b, 1)) {
+                make_move(in, in->a); folded = 1;
+            } else if (is_const_value(in->a, 1)) {
+                make_move(in, in->b); folded = 1;
+            } else if (is_const_value(in->a, 0) || is_const_value(in->b, 0)) {
+                make_move(in, ir_const(0)); folded = 1;
+            }
+            break;
+        case IR_DIV:
+            if (is_const_value(in->b, 1)) {
+                make_move(in, in->a); folded = 1;
+            }
+            break;
+        case IR_MOD:
+            if (is_const_value(in->b, 1)) {
+                make_move(in, ir_const(0)); folded = 1;
+            }
+            break;
+        case IR_EQ:
+            if (same_location(in->a, in->b)) {
+                make_move(in, ir_const(1)); folded = 1;
+            }
+            break;
+        case IR_LT: case IR_GT:
+            if (same_location(in->a, in->b)) {
+                make_move(in, ir_const(0)); folded = 1;
+            }
+            break;
+        default:
+            break;
+        }
+        break;
+    case IR_NEG:
+        if (is_const(in->a)) {
+            make_move(in, ir_const(wrap(0u - (uint32_t)in->a.value)));
+            folded = 1;
+        }
+        break;
+    case IR_NOT:
+        if (is_const(in->a)) {
+            make_move(in, ir_const(in->a.value == 0));
+            folded = 1;
+        }
+        break;
+    default:
+        break;
+    }
+
+    return folded;
+}
+
 /* Plegado de constantes y simplificaciones algebraicas. Una operacion entre
  * constantes se reemplaza por su resultado; x+0, x*1, x*0, x-x, etc. se
  * reemplazan por una copia o una constante. Leer una variable no tiene efectos,
@@ -110,83 +197,7 @@ static int fold_func(IrFunc *f, OptStats *st)
     int changed = 0;
 
     for (int i = 0; i < f->ncode; i++) {
-        Instr *in = &f->code[i];
-        long long v;
-        int folded = 0;
-
-        switch (in->op) {
-        case IR_ADD: case IR_SUB: case IR_MUL: case IR_DIV: case IR_MOD:
-        case IR_LT: case IR_GT: case IR_EQ:
-            if (is_const(in->a) && is_const(in->b) &&
-                compute(in->op, in->a.value, in->b.value, &v)) {
-                make_move(in, ir_const(v));
-                folded = 1;
-                break;
-            }
-            switch (in->op) {
-            case IR_ADD:
-                if (is_const_value(in->b, 0)) {
-                    make_move(in, in->a); folded = 1;
-                } else if (is_const_value(in->a, 0)) {
-                    make_move(in, in->b); folded = 1;
-                }
-                break;
-            case IR_SUB:
-                if (is_const_value(in->b, 0)) {
-                    make_move(in, in->a); folded = 1;
-                } else if (same_location(in->a, in->b)) {
-                    make_move(in, ir_const(0)); folded = 1;
-                }
-                break;
-            case IR_MUL:
-                if (is_const_value(in->b, 1)) {
-                    make_move(in, in->a); folded = 1;
-                } else if (is_const_value(in->a, 1)) {
-                    make_move(in, in->b); folded = 1;
-                } else if (is_const_value(in->a, 0) || is_const_value(in->b, 0)) {
-                    make_move(in, ir_const(0)); folded = 1;
-                }
-                break;
-            case IR_DIV:
-                if (is_const_value(in->b, 1)) {
-                    make_move(in, in->a); folded = 1;
-                }
-                break;
-            case IR_MOD:
-                if (is_const_value(in->b, 1)) {
-                    make_move(in, ir_const(0)); folded = 1;
-                }
-                break;
-            case IR_EQ:
-                if (same_location(in->a, in->b)) {
-                    make_move(in, ir_const(1)); folded = 1;
-                }
-                break;
-            case IR_LT: case IR_GT:
-                if (same_location(in->a, in->b)) {
-                    make_move(in, ir_const(0)); folded = 1;
-                }
-                break;
-            default:
-                break;
-            }
-            break;
-        case IR_NEG:
-            if (is_const(in->a)) {
-                make_move(in, ir_const(wrap(0u - (uint32_t)in->a.value)));
-                folded = 1;
-            }
-            break;
-        case IR_NOT:
-            if (is_const(in->a)) {
-                make_move(in, ir_const(in->a.value == 0));
-                folded = 1;
-            }
-            break;
-        default:
-            break;
-        }
-        if (folded) {
+        if (fold_instr(&f->code[i])) {
             st->folded++;
             changed = 1;
         }
@@ -263,7 +274,7 @@ static void facts_set(Facts *t, Operand loc, Operand val)
  * que `x` vale 5 (o es copia de `y`), cada lectura posterior de `x` se
  * reemplaza por 5 (o por `y`). Lo que se sabe se descarta en cada bloque nuevo,
  * al escribir una variable y, para las globales, en cada llamada. */
-static int propagate_func(IrFunc *f, OptStats *st)
+static int propagate_func(IrFunc *f, OptStats *st, int fold_too)
 {
     Cfg *cfg = cfg_build(f);
     Facts facts = { NULL, 0, 0 };
@@ -278,6 +289,8 @@ static int propagate_func(IrFunc *f, OptStats *st)
             Operand *w;
 
             /* 1. reemplazar las lecturas por lo que se sabe */
+            int rewrote = 0;
+
             for (int k = 0; k < nr; k++) {
                 int idx;
 
@@ -288,8 +301,15 @@ static int propagate_func(IrFunc *f, OptStats *st)
                     *reads[k] = facts.items[idx].val;
                     st->propagated++;
                     changed = 1;
+                    rewrote = 1;
                 }
             }
+            /* Si ahora es una operacion entre constantes (t1 = 3 + 4) y el
+             * plegado esta activado, se pliega en el momento: asi una cadena de
+             * constantes se resuelve en una sola pasada y no en una vuelta por
+             * cada eslabon. Con -opt propagate solo, no se pliega nada. */
+            if (rewrote && fold_too && fold_instr(in))
+                st->folded++;
 
             /* 2. actualizar lo que se sabe segun lo que escribe */
             if (in->op == IR_CALL) {
@@ -660,13 +680,13 @@ void opt_run(IrProgram *prog, unsigned passes, FILE *report, OptStats *stats)
             if (passes & OPT_FOLD)
                 changed |= fold_func(f, stats);
             if (passes & OPT_PROPAGATE)
-                changed |= propagate_func(f, stats);
+                changed |= propagate_func(f, stats, (passes & OPT_FOLD) != 0);
             if (passes & OPT_JUMPS)
                 changed |= jumps_func(f, stats);
             if (passes & OPT_DCE)
                 changed |= dce_func(f, stats);
             rounds++;
-        } while (changed && rounds < MAX_ROUNDS);
+        } while (changed && rounds < MAX_ROUNDS + before);
         if (passes & OPT_TEMPS)
             temps_func(f);
 
