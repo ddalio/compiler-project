@@ -49,6 +49,7 @@ Para estudiar el proyecto: qué hace cada archivo y cada función. Describe el c
 | `src/opt.h`, `src/opt.c` | Optimizador del código intermedio: plegado de constantes, propagación, código muerto, saltos y compactación de temporales. |
 | `Makefile` | Compila todo y corre los tests. |
 | `tests/run_tests.sh` | Corre todos los casos de test. |
+| `tests/optimizer/` | Programas C-TDS chicos con el código optimizado esperado (`.expected`, y `.<optimización>.expected` para una sola optimización). |
 
 Archivos generados (carpeta `build/`, no se versionan): `lex.yy.c` (lo genera flex desde `scanner.l`),
 `bison.tab.c` y `bison.tab.h` (los genera bison desde `bison.y`).
@@ -254,6 +255,7 @@ para que los mensajes lleven solo el nombre del archivo.
 | `run_path <dir> <PATH> <args...>` | Como `run`, pero con otro `PATH` (para probar la ausencia de `gcc` o un `gcc` falso). |
 | `run <dir> <args...>` | Ejecuta `c-tds`, guarda `stdout` en `$TMP/stdout`, `stderr` en `$TMP/stderr` y el código de salida en `$status`. |
 | `cli <desc> <exit> <texto> -- <args>` | Verifica un error de uso: código de salida y que `stderr` contenga el texto. |
+| `cliopt <desc> <exit> <texto> -- <args>` | Como `cli`, pero sobre un programa válido de `tests/optimizer/` (para probar `-opt` con un programa que sí se puede optimizar). |
 
 Grupos de pruebas:
 
@@ -273,6 +275,10 @@ Grupos de pruebas:
 | Assembly | `tests/assembly/` | `-target assembly`: código 0, nada por pantalla, `.ass` igual al esperado y mismo assembly por `stdout` con `-debug`. |
 | Ejecutables del intérprete | `tests/codinter/run/` | Cada programa se **compila a ejecutable y se ejecuta**: su código de salida debe ser el valor que da el intérprete, módulo 256. Se omite si no hay Linux x86-64 y `gcc` (variable `NATIVE`). |
 | Ejecutables propios | `tests/native/` | Cada programa se compila a ejecutable y su código de salida debe ser el de su `.expected`. Más un programa grande (3000 sentencias) generado por el script. |
+| Optimizador: código esperado | `tests/optimizer/` | Para cada `<caso>.expected` y `<caso>.<optimización>.expected`: `-target opt` (con `-opt <nombre>` si corresponde) sin salida por pantalla y `.opt` igual al esperado; con `-debug` el mismo código por `stdout`. Dentro del bucle la variable se llama `which` (no `pass`, que es el contador del script). |
+| Optimizador: equivalencia con el intérprete | `codinter/run`, `run_errors`, `native`, `optimizer` | Cada programa se interpreta (`-run`) sin optimizar y con `-opt all`, `fold`, `propagate`, `dce`, `jumps` y `temps`: `stdout`, `stderr` y código de salida iguales. |
+| Optimizador: equivalencia nativa | `codinter/run`, `native`, `optimizer` | Cada programa se compila a ejecutable sin optimizar y con `-opt all` (en `optimizer/`, también con cada optimización sola): mismo código de salida y misma salida. Se omite si no hay Linux x86-64 y `gcc`. Los ejecutables que mueren por una señal (división por cero a propósito) se ejecutan dentro de `{ ...; } 2>/dev/null` para que el shell no imprima el aviso `core dumped`. |
+| Optimizador: línea de comandos | (en el script) | `-opt` sin argumento, desconocido, seguido de otra opción y con `-target scan/parse/sem` (código 2); cada nombre válido y `all`; `-target opt` sin `-opt` = `all`; repetido, en otro orden y las cinco juntas = `all`; sin `-opt` no se optimiza y `-debug` no muestra `[opt]`; `-debug`, `-run`, nombre por defecto `.opt`, `-o` sobre el fuente, `-target assembly`, errores del programa y el ejecutable optimizado. |
 | Errores de herramientas | (en el script) | Con un `PATH` sin `gcc`, con un `gcc` falso que falla y con uno que termina sin leer la entrada, el compilador informa el error y sale con código 2; `-target assembly` funciona sin `gcc`. |
 | Línea de comandos | (en el script) | Errores de uso, nombres de salida por defecto y con `-o`, y cada target: `-target codinter` genera `.ci`, `-target assembly` genera `.ass`, sin `-target` se genera el ejecutable, `-target sem` genera `.sem`, `-target parse` y `-target scan` siguen funcionando, `-debug` muestra el AST y la traza de la tabla, `-target parse` no corre el análisis semántico, `-run` escribe el `.ci` y ejecuta, y solo vale con `-target codinter`. |
 

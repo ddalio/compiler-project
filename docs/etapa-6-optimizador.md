@@ -154,9 +154,14 @@ sección de testing.
 
 ## 5. Testing
 
-Esta sección describe los tests del optimizador y se va completando a medida que se agregan. Los casos de esta parte son **tests unitarios**: prueban el análisis y cada optimización
-directamente sobre código intermedio armado con la API, y comparan con un texto esperado **escrito a mano antes de correr nada** (la explicación de cada función de prueba está en
-`guia-del-codigo.md`, sección 22).
+Hay dos clases de tests del optimizador, y las dos comparan con resultados **escritos a mano antes de correr nada**, no copiados de la salida del compilador:
+
+1. **Tests unitarios** (`tests/unit/test_flow.c` y `test_opt.c`): prueban el análisis y cada optimización directamente sobre código intermedio armado con la API (la explicación
+   de cada función de prueba está en `guia-del-codigo.md`, sección 22).
+2. **Tests de programas completos** (`tests/optimizer/` y los grupos del optimizador de `tests/run_tests.sh`): pasan un programa C-TDS por todo el compilador, y comprueban el
+   código optimizado esperado, que el programa optimizado hace lo mismo que el original y la opción `-opt` de la línea de comandos.
+
+### Tests unitarios
 
 **Análisis (`tests/unit/test_flow.c`, 70 comprobaciones).** Qué operandos lee y escribe cada instrucción (y que `instr_reads` devuelve punteros a los campos reales, para poder
 reemplazarlos), las funciones auxiliares, y los bloques básicos y el grafo de flujo en cuatro formas típicas: código recto, un `if/else`, un `while` y código inalcanzable; más
@@ -181,4 +186,63 @@ igual cuando antes se sabía que `x` es copia de `t1` (la propagación lo reescr
 **Comprobación de que los tests detectan fallas.** Se rompió el optimizador a propósito de seis maneras, una por cada regla de seguridad, y en cada una el test unitario falló:
 plegar también la división por cero (2 fallas), no invalidar las globales en una llamada (2), eliminar una división que puede fallar (1), no reiniciar la propagación en cada bloque (3),
 eliminar las llamadas sin uso (1) y no dar la vuelta en `INT_MIN / -1` (1). Con el código restaurado vuelven a pasar los 86. Sin errores de memoria con AddressSanitizer y UBSan.
+
+### Tests de programas completos
+
+**Código optimizado esperado (`tests/optimizer/`, 12 casos).** Ocho programas chicos, cada uno pensado para mostrar una cosa, con el código que debe quedar escrito a mano
+(`<caso>.expected`, con todas las optimizaciones). Algunos tienen además un `<caso>.<optimización>.expected` con lo que deja **solo esa** optimización, para ver qué hace cada
+una sin que las otras la tapen. El script corre `-target opt` (o `-opt <nombre> -target opt`), comprueba que no imprime nada y compara el `.opt` con lo esperado; después repite con
+`-debug` y comprueba que el mismo código sale por `stdout`.
+
+| Programa | Qué muestra |
+|----------|-------------|
+| `constant_folding` | `2 + 3 * 4` y las variables que lo reciben se reducen a `ret 24`; con `fold` solo se pliega `3 * 4` y con `propagate` solo se propagan las copias. |
+| `dead_code` | Una llamada cuyo resultado no se usa **se conserva** (sin el resultado), el `return 4` inalcanzable desaparece (`dce` solo da lo mismo que `all`). |
+| `constant_branches` | `if (true)` y `while (false)` se resuelven: queda `ret 2`; con `jumps` solo, se ven los saltos redirigidos pero las asignaciones no se tocan. |
+| `loop_kept` | Un bucle con condición variable **no cambia**: no hay nada que plegar ni eliminar. |
+| `division_by_zero_kept` | `10 / z` con `z = 0` se propaga a `10 / 0` pero **no se pliega ni se elimina** aunque nadie use el resultado, porque tiene que fallar al ejecutarse. |
+| `globals_and_calls` | La global `g` vale 3 antes de la llamada y la llamada la cambia: se conserva la lectura `ret @g` y la llamada sin uso. |
+| `short_circuit_constants` | `true && false` y `r \|\| true` se reducen a una constante (`ret 1`). |
+| `fully_constant` | Un programa donde todo es constante: se reduce a `@g = 14` y `ret 14`. |
+
+**Equivalencia (la prueba de que no cambia el comportamiento).** Los programas de `tests/codinter/run/`, `run_errors/`, `native/` y `optimizer/` se ejecutan con `-run` sin
+optimizar y con `-opt all` y con cada una de las cinco optimizaciones sola (6 variantes por programa): el `stdout`, el mensaje de error de ejecución y el código de salida tienen que
+ser **idénticos** (64 programas). Con gcc disponible, los programas de `tests/codinter/run/`, `tests/native/` y `tests/optimizer/` se compilan también a ejecutable, sin optimizar y con
+`-opt all` (en `optimizer/` también con cada una por separado), y se comparan el código de salida y la salida (60 programas). Esto incluye los que **fallan a propósito**: una división
+o un resto por cero tiene que seguir terminando con la misma señal, no desaparecer.
+
+**Línea de comandos (27 casos).** `-opt` sin argumento, con un nombre desconocido (y que lista los nombres válidos), con la opción siguiente en lugar de un nombre, y con
+`-target scan`, `parse` y `sem` (todos código 2); cada nombre válido (`fold`, `propagate`, `dce`, `jumps`, `temps`, `all`) escribe el `.opt` sin imprimir nada;
+`-target opt` sin `-opt` es lo mismo que `-opt all`; repetir un nombre, cambiar el orden y escribir las cinco juntas equivale a `all` (importa el conjunto, no el orden);
+sin `-opt` el `.ci` no se optimiza y `-debug` no menciona `[opt]`; `-opt all -target codinter` escribe el mismo código que el `.opt`; `-debug` da las estadísticas por `stderr` y el
+código por `stdout`; `-run` con `-opt` da el mismo resultado y escribe el `.ci` optimizado; el nombre por defecto es `<fuente>.opt` junto al fuente y `-o` no puede pisar el fuente;
+con `-target assembly` el assembly sale más corto y sin la multiplicación; un error semántico o un `float` se informan igual que sin `-opt` y no generan salida; y el ejecutable
+optimizado sale con el valor esperado.
+
+**Comprobación de que los tests detectan fallas.** Con los tests de programas se repitió la prueba de romper el optimizador a propósito, ahora con cuatro mutaciones del `opt.c`:
+
+| Mutación | Tests que fallan |
+|----------|------------------|
+| No invalidar las globales en una llamada | `globals_and_calls` (esperado y equivalencia) y los viejos `eval_order_args`, `eval_order_binary` y `native/evaluation_order` |
+| Eliminar una división que puede fallar | `division_by_zero_kept` (esperado y equivalencia) |
+| Eliminar la llamada cuyo resultado no se usa | `dead_code` (con `all` y con `dce`) y `short_circuit` (interprete y nativo) |
+| Plegar la división por cero | `division_by_zero_kept`, `run_errors/division_by_zero`, `run_errors/remainder_by_zero`, `native/division_by_zero` y `native/remainder_by_zero` |
+
+Con el código restaurado (igual a `HEAD`) vuelven a pasar todos.
+
+**Hallazgos de los tests.** (1) La primera versión de `globals_and_calls` **no detectaba** la mutación "no invalidar globales": en `g = g + h()` la global se lee *antes* de la llamada,
+así que su valor conocido sigue siendo válido aunque el optimizador se equivoque. Lo descubrió la prueba de mutaciones (solo fallaban tests viejos); se cambió el programa para
+que también lea `g` **después** de otra llamada, que es donde el error se vería. (2) Un error del script, no del compilador: una variable nueva llamada `pass` pisaba el contador de
+casos aprobados, y el resumen final decía 187 ok cuando las líneas `ok` eran 412; se renombró.
+
+**Efecto medido** (`-opt all`, instrucciones y temporales antes y después, sumados sobre cada carpeta; salen de `-debug`):
+
+| Carpeta | Programas | Instrucciones | Temporales |
+|---------|-----------|---------------|------------|
+| `tests/codinter/run/` | 26 | 309 → 243 (21% menos) | 115 → 79 |
+| `tests/native/` | 26 | 294 → 186 (36% menos) | 150 → 69 |
+| `tests/optimizer/` | 8 | 87 → 34 (60% menos) | 26 → 7 |
+
+**Resultado.** `make test` ejecuta **412 casos** y todos pasan (los 249 anteriores —etapas 1 a 5 y tests unitarios del optimizador— más 163 de programas completos del optimizador: 12 de código esperado, 64 de
+equivalencia con el intérprete, 60 de equivalencia nativa y 27 de línea de comandos); `make test-asan` también, sin errores de memoria ni de comportamiento indefinido.
 
