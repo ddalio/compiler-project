@@ -71,6 +71,8 @@ int instr_is_jump(const Instr *in)
 /* --------------------------------------------- bloques y grafo de control */
 
 /* Numero de etiqueta mas alto que aparece en el codigo del metodo. */
+/* Numero de etiqueta mas grande usado en el metodo: da el tamano de la tabla
+ * etiqueta -> bloque de cfg_build (las etiquetas son numeros chicos, L1, L2...). */
 static int max_label(const IrFunc *f)
 {
     long long max = 0;
@@ -109,6 +111,9 @@ Cfg *cfg_build(const IrFunc *f)
     if (!leader || !block_of || !label_block)
         exit(2);
 
+    /* Un "lider" es la primera instruccion de un bloque: la primera del metodo,
+     * cada etiqueta (a ella se puede saltar) y la que sigue a un salto o a un
+     * ret (a ella solo se llega si el salto no se toma, o por una etiqueta). */
     leader[0] = 1;
     for (int i = 0; i < n; i++) {
         const Instr *in = &f->code[i];
