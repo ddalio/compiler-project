@@ -151,3 +151,34 @@ Se verificó que **optimizar no cambia el comportamiento**, con dos pruebas sobr
 Efecto medido sobre esos 52 programas: de **603 a 429 instrucciones** de código intermedio con `-opt all` (un 29% menos); en el programa de ejemplo de la
 sección 3, el assembly pasa de 83 a 21 líneas. Sin errores de memoria con AddressSanitizer y UBSan. Los tests permanentes del optimizador se agregan en la
 sección de testing.
+
+## 5. Testing
+
+Esta sección describe los tests del optimizador y se va completando a medida que se agregan. Los casos de esta parte son **tests unitarios**: prueban el análisis y cada optimización
+directamente sobre código intermedio armado con la API, y comparan con un texto esperado **escrito a mano antes de correr nada** (la explicación de cada función de prueba está en
+`guia-del-codigo.md`, sección 22).
+
+**Análisis (`tests/unit/test_flow.c`, 70 comprobaciones).** Qué operandos lee y escribe cada instrucción (y que `instr_reads` devuelve punteros a los campos reales, para poder
+reemplazarlos), las funciones auxiliares, y los bloques básicos y el grafo de flujo en cuatro formas típicas: código recto, un `if/else`, un `while` y código inalcanzable; más
+dos bordes: etiquetas consecutivas y un método que termina en una etiqueta.
+
+**Optimizaciones (`tests/unit/test_opt.c`, 86 comprobaciones).** Para cada una de las cinco optimizaciones hay tres tipos de caso:
+
+- **Lo que debe optimizar**, con una optimización a la vez (así se ve qué hace cada una sin que las otras la tapen).
+- **Lo que no debe tocar**, que son las reglas de seguridad de la decisión 6: una división o un resto por cero no se pliega ni se elimina, las llamadas y las escrituras a globales
+  no se eliminan, una llamada invalida las globales pero no las locales, y una etiqueta descarta lo que se sabe (el resultado de un cortocircuito que se une desde dos caminos no
+  se propaga por la etiqueta de unión).
+- **Bordes**: aritmética de 32 bits que da la vuelta (`INT_MAX + 1`, `INT_MIN / -1`), un salto a sí mismo, métodos sin temporales.
+
+Además, un programa que usa las cinco juntas (que el punto fijo reduce de 12 instrucciones a 2), la comprobación de que cada optimización por separado hace menos que todas juntas y que
+**optimizar dos veces da lo mismo que optimizar una** (idempotencia, en 7 programas).
+
+**Los tests encontraron tres errores míos, no del optimizador.** Al escribir las expectativas a mano olvidé que, dentro de un bloque, después de `t1 = x` la propagación de copias
+reemplaza también un `ret t1` posterior por `ret x`; los tres textos esperados (`redefinition`, `block_boundary` y `short_circuit`) estaban mal y se corrigieron. En esos tres casos lo
+que importa verificar sigue cumpliéndose: nada se propaga a través de una etiqueta ni a través de una unión de caminos. Un cuarto error, también de un test, fue esperar que `x = x` quedara
+igual cuando antes se sabía que `x` es copia de `t1` (la propagación lo reescribe como `x = t1`, que es correcto).
+
+**Comprobación de que los tests detectan fallas.** Se rompió el optimizador a propósito de seis maneras, una por cada regla de seguridad, y en cada una el test unitario falló:
+plegar también la división por cero (2 fallas), no invalidar las globales en una llamada (2), eliminar una división que puede fallar (1), no reiniciar la propagación en cada bloque (3),
+eliminar las llamadas sin uso (1) y no dar la vuelta en `INT_MIN / -1` (1). Con el código restaurado vuelven a pasar los 86. Sin errores de memoria con AddressSanitizer y UBSan.
+

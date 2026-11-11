@@ -263,7 +263,7 @@ Grupos de pruebas:
 | Scanner errores | `tests/scanner/errors/` | Código 1, no se genera salida, `stderr` igual al esperado. |
 | Parser válidos | `tests/parser/valid/` | Código 0, nada por pantalla, `.sint` igual al esperado y mismo árbol por `stdout` con `-debug`. |
 | Parser errores | `tests/parser/errors/` | Código 1, no se genera salida, `stderr` igual al esperado. |
-| Unitarios | `tests/unit/` | Corre `test_symtab`, `test_ast`, `test_ir`, `test_interp` y `test_x86gen` (si `UNIT_DIR` está definido, como hace `make test`); cada uno debe terminar con código 0. |
+| Unitarios | `tests/unit/` | Corre `test_symtab`, `test_ast`, `test_ir`, `test_interp`, `test_x86gen`, `test_flow` y `test_opt` (si `UNIT_DIR` está definido, como hace `make test`); cada uno debe terminar con código 0. |
 | Semántico válidos | `tests/semantic/valid/` | Código 0, nada por pantalla, `.sem` (AST anotado) igual al esperado y mismo AST por `stdout` con `-debug`. |
 | Semántico errores | `tests/semantic/errors/` | Código 1, no se genera salida, `stderr` igual al esperado (mensaje y posición exactos). |
 | Código intermedio válidos | `tests/codinter/valid/` | Código 0, nada por pantalla, `.ci` igual al esperado y mismo código por `stdout` con `-debug`. |
@@ -816,4 +816,45 @@ Funciones internas de `opt.c` (todas `static`):
 | `label_target(f, label)`, `label_follows(f, i, label)`, `final_target(f, label)` | Auxiliares de saltos: dónde queda realmente una etiqueta (la primera instrucción que no es etiqueta), si una etiqueta está justo a continuación de una instrucción, y el destino final de un salto que va a otro salto (con un tope de profundidad para los ciclos). |
 | `jumps_func(f, st)` | **jumps.** Resuelve los saltos condicionales con condición constante, redirige los saltos a saltos, elimina los saltos a la instrucción siguiente y las etiquetas que nadie usa. |
 | `temps_func(f)` | **temps.** Renumera los temporales que se usan como `t1`, `t2`, ... sin huecos y baja `ntemps`, lo que achica el marco de pila. |
+
+## 22. `tests/unit/test_flow.c` y `tests/unit/test_opt.c`
+
+Tests unitarios del optimizador. Igual que los otros unitarios, usan la macro `CHECK(cond)`. Los métodos se arman con la API de `ir.h` y lo esperado está
+**escrito a mano** antes de correr nada.
+
+### `test_flow.c`: análisis del flujo
+
+| Función | Qué prueba |
+|---------|------------|
+| `make(op)` | Auxiliar: una instrucción con operandos reconocibles. |
+| `test_binary_instructions` | Las 8 operaciones aritméticas y de comparación leen `a` y `b` (`instr_reads` devuelve punteros a **esos campos**) y escriben `result`. |
+| `test_unary_instructions` | `MOVE`, `NEG` y `NOT` leen solo `a`. |
+| `test_control_instructions` | `JZ`, `JNZ` y `PARAM` leen `a` y no escriben; `JMP` y `LABEL` no leen valores (la etiqueta destino no es un valor). |
+| `test_return_and_call` | `RET` lee su valor solo si lo tiene; `CALL` no lee nada (el método y la cantidad de argumentos no son valores) y escribe solo si tiene resultado. |
+| `test_helpers` | `is_location`, `same_location` (el mismo temporal en dos métodos es la misma ubicación; una constante nunca lo es) e `instr_is_jump`. |
+| `block_is(...)` | Auxiliar: comprueba el rango de instrucciones de un bloque y sus sucesores. |
+| `test_empty_function` | Un método sin código tiene 0 bloques; `cfg_free(NULL)` es válido. |
+| `test_straight_line` | Código sin saltos: un solo bloque que termina en `ret` (sin sucesores). |
+| `test_if_else` | Un `if/else`: 4 bloques; el `jz` tiene dos sucesores (el destino y la caída), el `jmp` uno, y el último termina en `ret`. |
+| `test_while_loop` | Un `while`: el salto de vuelta lleva al bloque de la condición. |
+| `test_block_after_return` | Lo que sigue a un `ret` es otro bloque (inalcanzable) aunque no haya etiqueta. |
+| `test_consecutive_labels_and_final_label` | Dos etiquetas seguidas son bloques distintos; el último bloque no tiene siguiente. |
+| `test_print` | El formato de `cfg_print`. |
+
+### `test_opt.c`: optimizaciones
+
+Todos los métodos son `f(a, b)` con locales `x`, `y` y una global `g`, así el encabezado del texto esperado es siempre el mismo. Auxiliares: `A`, `B`, `X`, `Y`,
+`G` (operandos del método de prueba), `T(f, n)` (el temporal `tN`, creando los que falten), `emit`, `render` (el programa impreso en una cadena), `optimize(build,
+passes, &stats, &prog)` (arma el método, aplica las optimizaciones y devuelve su texto) y `run`. Las macros `IN`, `LB`, `HDR` y `END` arman el texto esperado. `CHECK_TEXT`
+compara dos textos y, si difieren, los muestra.
+
+| Grupo | Casos |
+|-------|-------|
+| **fold** | `test_fold_constants` (las 10 operaciones entre constantes y el contador `folded`); `test_fold_wraparound` (`INT_MAX + 1`, `65536 * 65536`, `-INT_MIN`, `INT_MIN / -1`, división y resto con negativos); `test_fold_division_by_zero` (**seguridad**: `5 / 0`, `5 % 0` y `0 / 0` no se pliegan); `test_fold_algebra` (las 13 simplificaciones); `test_fold_untouched` (lo que **no** debe tocar: operandos distintos, divisor que no es constante, `0 - a`, `a * 2`). |
+| **propagate** | `test_propagate_constants` y `_copies`; `_redefinition` (al escribir una variable se olvida lo que se sabía); `_source_overwritten` y `_chain_kill` (al escribir el origen de una copia se olvidan las copias); `_block_boundary` (**seguridad**: una etiqueta descarta lo que se sabe); `_call` (**seguridad**: una llamada invalida las globales pero no las locales); `_global_copy` (también la copia de una global); `_into_control` (se propaga a `param`, `ret` y a la condición de un salto); `_expression_results` (una operación no es un hecho, pero `x = t1` sí); `_short_circuit` (**seguridad**: el resultado de un cortocircuito, que se une desde dos caminos, no se propaga a través de la etiqueta de unión). |
+| **dce** | `test_dce_chain` (una cadena de 3 instrucciones sin uso cae completa); `_keeps_used`; `_keeps_effects` (**seguridad**: las escrituras a globales y las llamadas se conservan, de la llamada solo se quita el resultado sin uso); `_division` (**seguridad**: `a / 0` y `a % b` se conservan aunque no se usen; `a / 2` y `a % -1` no); `_unreachable_after_return` y `_after_jmp`; `_keeps_reachable_code`; `_self_move_and_unused_param`. |
+| **jumps** | `test_jumps_constant_conditions` (`jz 0` y `jnz 7` pasan a `jmp`; `jz 1` y `jnz 0` desaparecen); `_to_next_instruction` (incluye una etiqueta en el medio); `_conditional_to_next`; `_threading` (un salto a un salto va al destino final); `_keeps_needed` (un bucle no se toca); `_self_loop` (un salto a sí mismo no hace que el optimizador siga saltos para siempre). |
+| **temps** | `test_temps_compaction` (los temporales `t3`, `t5` y `t8` pasan a `t1`, `t2` y `t3` y `ntemps` baja de 8 a 3); `test_temps_without_temporaries`. |
+| **Combinadas** | `test_all_together` (un programa de 12 instrucciones queda en `@g = 12` y `ret 12`, con más de una vuelta del punto fijo); `test_passes_are_independent` (sin optimizaciones nada cambia, con solo `fold` o solo `dce` se hace menos que con todas); `test_short_circuit_all` (el cortocircuito completo se simplifica a `ret @g`); `test_idempotence` (aplicar todas las optimizaciones dos veces en 7 programas: la segunda vez no cambia nada). |
+| **Nombres y estadísticas** | `test_names` (`opt_from_name`, los bits y `opt_names`); `test_report_and_totals` (la línea de informe por método y los totales de varios métodos). |
 
