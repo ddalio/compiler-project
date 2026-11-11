@@ -2,9 +2,9 @@
 
 Taller de Diseño de Software (Cod. 3306) - DC - FCEFQyN - UNRC - 2026
 
-**Estado:** Etapas 1 (léxico), 2 (sintáctico), 3 (semántico) y 4 (código intermedio, con intérprete) y 5 (código objeto, assembly x86-64 y ejecutable) terminadas.
+**Estado:** Etapas 1 (léxico), 2 (sintáctico), 3 (semántico) y 4 (código intermedio, con intérprete) y 5 (código objeto, assembly x86-64 y ejecutable) terminadas. Etapa 6 (optimizador) en desarrollo.
 
-Documentación: [etapa 1](docs/etapa-1-lexico.md), [etapa 2](docs/etapa-2-sintactico.md), [etapa 3](docs/etapa-3-semantico.md), [etapa 4](docs/etapa-4-codigo-intermedio.md), [etapa 5](docs/etapa-5-codigo-objeto.md). Para estudiar el código (qué hace cada archivo y cada función): [guía del código](docs/guia-del-codigo.md).
+Documentación: [etapa 1](docs/etapa-1-lexico.md), [etapa 2](docs/etapa-2-sintactico.md), [etapa 3](docs/etapa-3-semantico.md), [etapa 4](docs/etapa-4-codigo-intermedio.md), [etapa 5](docs/etapa-5-codigo-objeto.md), [etapa 6](docs/etapa-6-optimizador.md). Para estudiar el código (qué hace cada archivo y cada función): [guía del código](docs/guia-del-codigo.md).
 
 ## Requisitos
 
@@ -32,7 +32,8 @@ make clean    # borra el ejecutable y la carpeta build/
 | Opción | Acción |
 |--------|--------|
 | `-o <salida>` | nombre del archivo de salida: el ejecutable, o el archivo de la etapa si se da `-target` |
-| `-target <etapa>` | detiene la compilación en una etapa: `scan`, `parse`, `sem`, `codinter` o `assembly`. **Sin `-target` se genera el ejecutable** `<nombre>.out` |
+| `-target <etapa>` | detiene la compilación en una etapa: `scan`, `parse`, `sem`, `codinter`, `opt` o `assembly`. **Sin `-target` se genera el ejecutable** `<nombre>.out` |
+| `-opt <nombre>` | activa una optimización del código intermedio: `fold`, `propagate`, `dce`, `jumps`, `temps` o `all` (todas). Se puede repetir. **Sin `-opt` no se optimiza nada** |
 | `-debug` | imprime información de depuración |
 | `-run` | ejecuta el código intermedio generado desde `main` y, si `main` devuelve un valor, lo imprime. Implica `-target codinter` y no se puede combinar con otro target |
 
@@ -44,6 +45,7 @@ Salida de cada etapa:
 | `parse` | `<nombre>.sint` | árbol de parsing, un nodo por línea con 2 espacios de sangría por nivel |
 | `sem` | `<nombre>.sem` | AST anotado: un nodo por línea; las expresiones muestran su tipo y los identificadores la clase de símbolo (`id x : int [variable]`) |
 | `codinter` | `<nombre>.ci` | código de tres direcciones: variables globales y, por método, `func nombre(params)`, sus variables locales, las instrucciones (`t1 = a + b`, `jz t1, L1`, `param`, `call`, `ret`) y `end` |
+| `opt` | `<nombre>.opt` | código intermedio optimizado (mismo formato que el `.ci`); sin `-opt`, con todas las optimizaciones |
 | `assembly` | `<nombre>.ass` | assembly x86-64 de Linux (sintaxis AT&T): cada instrucción del código intermedio aparece como comentario antes de su traducción |
 | (sin `-target`) | `<nombre>.out` | ejecutable: el assembly se le pasa a `gcc`, que lo ensambla y lo enlaza con la biblioteca de C (el assembly no se guarda) |
 
@@ -63,6 +65,9 @@ Ejemplos:
 ./c-tds -target assembly programa.ctds # solo hasta el assembly: genera programa.ass
 ./c-tds -target codinter programa.ctds # solo hasta el código intermedio: genera programa.ci
 ./c-tds -run programa.ctds             # interpreta el código intermedio e imprime lo que devuelve main
+./c-tds -opt all programa.ctds         # compila con todas las optimizaciones: genera programa.out
+./c-tds -target opt programa.ctds      # código intermedio optimizado: genera programa.opt
+./c-tds -debug -opt all programa.ctds  # además informa por stderr cuánto mejoró el código
 ./c-tds -target sem programa.ctds      # solo hasta el análisis semántico: genera programa.sem
 ./c-tds -target parse programa.ctds    # solo hasta el parser: genera programa.sint
 ./c-tds -target scan programa.ctds     # solo el scanner: genera programa.lex

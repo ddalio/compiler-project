@@ -22,6 +22,8 @@ Para estudiar el proyecto: qué hace cada archivo y cada función. Describe el c
            semantic.c: semantic_analyze(AST, tabla de símbolos) ──► main.c: run_sem() ──► archivo.sem  (target sem)
   Etapa 4: AST anotado + tabla de símbolos ──► irgen.c: irgen_generate() ──► ir.c: ir_print() ──► archivo.ci  (target codinter)
            con -run: interp.c: interp_run() ejecuta el código intermedio desde main
+  Etapa 6: con -opt, opt.c: opt_run() optimiza el código intermedio (antes del .ci, del assembly, del ejecutable y de -run);
+           -target opt escribe el código optimizado en archivo.opt
   Etapa 5: código intermedio ──► x86gen.c: x86_generate() ──► archivo.ass  (target assembly)
            sin -target: el assembly va por una tubería a gcc, que genera el ejecutable archivo.out
 ```
@@ -43,6 +45,8 @@ Para estudiar el proyecto: qué hace cada archivo y cada función. Describe el c
 | `src/irgen.h`, `src/irgen.c` | Generador de código intermedio: recorre el AST anotado y produce el código de tres direcciones. |
 | `src/interp.h`, `src/interp.c` | Intérprete del código intermedio: ejecuta el programa desde `main` (opción `-run`). |
 | `src/x86gen.h`, `src/x86gen.c` | Generador de assembly x86-64: traduce el código intermedio a assembly de Linux en sintaxis AT&T. |
+| `src/flow.h`, `src/flow.c` | Análisis del flujo del código intermedio: qué lee y escribe cada instrucción, bloques básicos y grafo de flujo de control. |
+| `src/opt.h`, `src/opt.c` | Optimizador del código intermedio: plegado de constantes, propagación, código muerto, saltos y compactación de temporales. |
 | `Makefile` | Compila todo y corre los tests. |
 | `tests/run_tests.sh` | Corre todos los casos de test. |
 
@@ -197,9 +201,9 @@ memoria), `parse_root`, `yyerror` y, vía `bison.tab.h`, `yydebug`.
 |---------|----------|
 | `static void usage(FILE *out)` | Imprime la ayuda de uso. |
 | `static int has_extension(const char *name, const char *ext)` | Indica si `name` termina en `ext` y tiene algo antes (por eso `.ctds` solo no vale). |
-| `static int check_target(const char *target)` | Acepta `scan`, `parse`, `sem`, `codinter` y `assembly`; cualquier otro nombre es `unknown target`. (`sem` es el análisis semántico: la cátedra lo ejecuta como parte de la compilación y le asigna la extensión `.sem`, pero no lo lista entre los targets.) |
+| `static int check_target(const char *target)` | Acepta `scan`, `parse`, `sem`, `codinter`, `opt` y `assembly`; cualquier otro nombre es `unknown target`. (`sem` es el análisis semántico: la cátedra lo ejecuta como parte de la compilación y le asigna la extensión `.sem`, pero no lo lista entre los targets.) |
 | `static int same_file(const char *a, const char *b)` | Indica si dos nombres son el mismo archivo: iguales, o distintos pero con el mismo dispositivo e inodo (un enlace, otra ruta). Lo usa `parse_args` para que `-o` no pueda apuntar al propio fuente. |
-| `static int parse_args(int argc, char **argv, Options *opt)` | Recorre los argumentos y completa `Options`: `-o` y `-target` toman el argumento siguiente, `-debug` y `-run` son banderas y cualquier otro argumento que empiece con `-` es una opción desconocida (por eso un archivo no puede empezar con `-`). Valida que haya un solo archivo de entrada, que termine en `.ctds`, que el target (si se dio) sea válido, que `-run` no se combine con otro target y que `-o` no apunte al propio fuente (`same_file`). Sin `-target`, `opt->target` queda en `NULL` y se genera el ejecutable; `-run` sin `-target` equivale a `-target codinter`. |
+| `static int parse_args(int argc, char **argv, Options *opt)` | Recorre los argumentos y completa `Options`: `-o` y `-target` toman el argumento siguiente, `-opt` toma el nombre de una optimización (la convierte en un bit con `opt_from_name` y suma los bits en `opt_mask`), `-debug` y `-run` son banderas y cualquier otro argumento que empiece con `-` es una opción desconocida (por eso un archivo no puede empezar con `-`). Valida que haya un solo archivo de entrada, que termine en `.ctds`, que el target (si se dio) sea válido, que `-run` no se combine con otro target, que `-opt` no se use con `scan`, `parse` o `sem` (`-target opt` sin `-opt` activa todas las optimizaciones) y que `-o` no apunte al propio fuente (`same_file`). Sin `-target`, `opt->target` queda en `NULL` y se genera el ejecutable; `-run` sin `-target` equivale a `-target codinter`. |
 | `static char *output_path(const Options *opt, const char *stage_ext)` | Calcula el archivo de salida: el de `-o` si se dio; si no, el del fuente cambiando `.ctds` por la extensión de la etapa (`.lex`, `.sint`). Devuelve memoria que hay que liberar con `free`. |
 | `static FILE *open_input(const Options *opt)` | Abre el fuente; si falla informa el motivo. |
 | `static int write_failed(const char *path)` | Informa que no se pudo escribir la salida y devuelve el código 2. |
@@ -213,13 +217,14 @@ memoria), `parse_root`, `yyerror` y, vía `bison.tab.h`, `yydebug`.
 | `static int run_sem(const Options *opt)` | Etapa sem: corre el front end y, si no hubo errores semánticos, escribe el AST anotado en el `.sem`. Con `-debug` imprime el AST por `stdout` y la traza de la tabla por `stderr`. |
 | `static int run_program(const IrProgram *prog)` | `-run`: llama a `interp_run`; si hubo un error de ejecución (ya informado) devuelve el código 1; si `main` devolvió un valor, lo imprime en una línea por `stdout` (un `boolean` sale como 1 o 0). |
 | `static int build_ir(opt, f, prog)` | Front end completo (`run_front`) y generación de código intermedio. Devuelve `EXIT_OK` solo si el programa no tiene ningún error (léxico, sintáctico, semántico ni de generación): entonces `f` y `*prog` siguen vivos y el que llama debe liberarlos. Si no, devuelve el código de salida y no deja nada que liberar. Lo usan `run_codinter`, `run_assembly` y `run_executable`. |
-| `static int run_codinter(const Options *opt)` | Etapa codinter: llama a `build_ir` y escribe el código de tres direcciones en el `.ci`. Con `-debug` lo imprime también por `stdout`. Con `-run` ejecuta el programa con `run_program`. |
+| (`build_ir`, optimización) | Después de generar el código intermedio, si hay optimizaciones pedidas (`opt_mask`), llama a `opt_run` (con `stderr` como informe si hay `-debug`) e imprime el total. Por eso `.ci`, `.opt`, assembly, ejecutable y `-run` reflejan las optimizaciones. |
+| `static int run_codinter(const Options *opt, const char *ext)` | Etapas codinter y opt: llama a `build_ir` y escribe el código de tres direcciones en un archivo con la extensión `ext` (`.ci` para `codinter`, `.opt` para `opt`). Con `-debug` lo imprime también por `stdout`. Con `-run` ejecuta el programa con `run_program`. |
 | `static char *make_assembly(opt, prog, len)` | Genera el assembly (`x86_generate`) en una cadena en memoria, que hay que liberar con `free`, y con `-debug` también la imprime por `stdout`. |
 | `static int run_assembly(const Options *opt)` | Etapa assembly: llama a `build_ir`, genera el assembly y lo escribe en el `.ass` (o en el archivo de `-o`). |
 | `static int write_all(fd, buf, len)` | Escribe todo un buffer en un descriptor, repitiendo si la interrumpe una señal. |
 | `static int build_executable(assembly, len, exe_path)` | Arma el ejecutable: con `fork` y `execlp` lanza `gcc -x assembler - -o exe_path` y le pasa el assembly por una tubería conectada a su entrada estándar. Ignora `SIGPIPE` mientras escribe, espera al hijo con `waitpid` e informa si no se pudo ejecutar `gcc` (estado 127) o si falló. Devuelve `EXIT_OK` o `EXIT_USAGE`. |
 | `static int run_executable(const Options *opt)` | Sin `-target`: llama a `build_ir`, genera el assembly y arma el ejecutable `<fuente>.out` (o el de `-o`). El assembly no se guarda. |
-| `int main(int argc, char **argv)` | Interpreta los argumentos y llama a `run_executable` (sin `-target`), `run_scan`, `run_parse`, `run_sem`, `run_codinter` o `run_assembly` según el target. |
+| `int main(int argc, char **argv)` | Interpreta los argumentos y llama a `run_executable` (sin `-target`), `run_scan`, `run_parse`, `run_sem`, `run_codinter` (con `.ci` o `.opt`) o `run_assembly` según el target. |
 
 Códigos de salida: 0 correcto, 1 errores en el programa fuente (léxicos o sintácticos), 2 error de uso o de
 archivos.
@@ -751,4 +756,64 @@ arman un método `f` con parámetros, locales y las instrucciones a probar, o un
 | `test_returns` | `ret` con y sin valor, y que solo el `ret` de `main` ponga `%eax` en 0. |
 | `test_implicit_return` | Un método que termina en una etiqueta recibe un retorno al final (`# (fin del metodo)`), y un `main` vacío devuelve 0. |
 | `test_param_generates_no_code` | `param` solo deja un comentario; los argumentos se cargan en el `call`. |
+
+## 20. `src/flow.h` y `src/flow.c`
+
+Análisis del código intermedio que necesitan las optimizaciones. Tiene dos partes.
+
+**Qué lee y qué escribe cada instrucción.**
+
+| Función | Qué hace |
+|---------|----------|
+| `int instr_reads(Instr *in, Operand *out[2])` | Carga en `out[]` **punteros** a los operandos que lee la instrucción (los propios campos de `in`, para poder reemplazarlos) y devuelve cuántos son (0 a 2): `MOVE`, `NEG`, `NOT`, `JZ`, `JNZ`, `PARAM` y `RET` con valor leen el operando `a`; las operaciones aritméticas y comparaciones leen `a` y `b`; `LABEL`, `JMP` y `CALL` no leen valores (las etiquetas, el nombre del método y la cantidad de argumentos no son valores). |
+| `Operand *instr_write(Instr *in)` | Puntero al operando que **escribe** (el `result` de `MOVE`, las operaciones y el `CALL` que tiene resultado), o `NULL`. |
+| `int is_location(Operand o)` | Verdadero para una variable o un temporal (no para una constante ni una etiqueta). |
+| `int same_location(Operand a, Operand b)` | Verdadero si son la misma variable o el mismo temporal. |
+| `int instr_is_jump(const Instr *in)` | Verdadero para `jmp`, `jz` y `jnz`. |
+
+**Bloques básicos y grafo de flujo de control.** Un **bloque básico** es un tramo de código sin saltos ni etiquetas en el medio: se ejecuta siempre de
+arriba hacia abajo. `Block` guarda el índice de su primera y última instrucción y sus sucesores (0, 1 o 2); `Cfg` es el arreglo de bloques.
+
+| Función | Qué hace |
+|---------|----------|
+| `Cfg *cfg_build(const IrFunc *f)` | Arma el grafo de un método. Un bloque empieza en la primera instrucción, en cada etiqueta y en la instrucción que sigue a un salto o un `ret`. Sucesores: el destino de un `jmp`; el destino de un salto condicional y el bloque siguiente; ninguno en un `ret`; el bloque siguiente en los demás casos. |
+| `void cfg_free(Cfg *cfg)` | Libera el grafo (acepta `NULL`). |
+| `void cfg_print(FILE *out, const IrFunc *f, const Cfg *cfg)` | Escribe el grafo para depurar: una línea por bloque con sus instrucciones y sus sucesores. |
+| `max_label(f)` (interna) | Número de etiqueta más alto del método, para dimensionar la tabla etiqueta → bloque de `cfg_build`. |
+
+## 21. `src/opt.h` y `src/opt.c`
+
+El **optimizador** transforma el código intermedio para que sea más corto sin cambiar lo que hace el programa (decisión de seguridad: la aritmética es de
+32 bits que da la vuelta, una división por cero nunca se pliega ni se elimina y las llamadas nunca se eliminan). Cada optimización es una función `*_func`
+que recorre el código de **un método**, lo modifica en el lugar y devuelve 1 si cambió algo. Se eligen con `-opt` (`fold`, `propagate`, `dce`, `jumps`,
+`temps` o `all`; los bits están en el `enum` de `opt.h`).
+
+`OptStats` guarda lo que hizo el optimizador: instrucciones y temporales antes y después, y cuántas operaciones se plegaron, operandos se reemplazaron,
+instrucciones se eliminaron, saltos o etiquetas se resolvieron y cuántas vueltas dio.
+
+| Función | Qué hace |
+|---------|----------|
+| `unsigned opt_from_name(const char *name)` | Convierte el nombre de una optimización (o `all`) en su bit; 0 si no existe. |
+| `const char *opt_names(void)` | La lista de nombres válidos, para los mensajes de error. |
+| `void opt_run(IrProgram *prog, unsigned passes, FILE *report, OptStats *stats)` | Optimiza todos los métodos. Para cada uno aplica `fold`, `propagate`, `jumps` y `dce` (las que estén en la máscara) **hasta que ninguna cambie nada** (tope de 50 vueltas) y al final, una vez, `temps`. Si `report` no es `NULL` escribe una línea por método. Deja los totales en `*stats`. |
+
+Funciones internas de `opt.c` (todas `static`):
+
+| Función | Qué hace |
+|---------|----------|
+| `xcalloc` | `calloc` que termina el programa si no hay memoria. |
+| `delete_marked(f, dead)` | Elimina las instrucciones marcadas en el arreglo `dead` y compacta el código; devuelve cuántas borró. |
+| `is_const(o)`, `is_const_value(o, v)` | Indican si un operando es una constante (o una constante con ese valor). |
+| `make_move(in, src)` | Convierte una instrucción en una copia `result = src`. |
+| `wrap(v)`, `compute(op, a, b, out)` | Aritmética de 32 bits con signo que da la vuelta (con enteros sin signo para evitar el comportamiento indefinido de C). `compute` devuelve 0 si la operación no se puede plegar: división o resto por cero; `INT_MIN / -1` sí se calcula. |
+| `fold_func(f, st)` | **fold.** Una operación entre constantes se reemplaza por su resultado; y `x+0`, `x-0`, `x*1`, `x/1` pasan a `x`, `x*0`, `x-x`, `x%1` a 0, `x==x` a 1 y `x<x`, `x>x` a 0. |
+| `Fact`, `Facts`, `facts_find`, `facts_kill`, `facts_kill_globals`, `facts_set` | La tabla de lo que se sabe dentro de un bloque: `Fact` dice que una ubicación vale una constante o es copia de otra. `facts_kill` descarta lo que se sabía de una variable y de lo que era copia suya; `facts_kill_globals` descarta lo relacionado con globales (se llama en cada `call`). |
+| `propagate_func(f, st)` | **propagate.** Para cada bloque recorre las instrucciones: primero reemplaza cada lectura por lo que se sabe (constante o copia) y después actualiza lo que se sabe según lo que escribe la instrucción. La tabla se vacía al empezar cada bloque. |
+| `Reads`, `read_counter`, `count_reads` | Cuenta cuántas veces se lee cada temporal, parámetro y variable local en el método (las globales no se cuentan). |
+| `removable_if_unused(in)` | Indica si una instrucción cuyo resultado nadie lee se puede eliminar: sí para copias y operaciones sin efectos; la división y el resto solo con divisor constante distinto de 0 (con 0 el programa debe fallar). |
+| `remove_unreachable(f, st)` | Elimina los bloques a los que no se llega desde el principio del método (recorrido del grafo desde el bloque 0). |
+| `dce_func(f, st)` | **dce.** Elimina el código inalcanzable, las copias `x = x` y las instrucciones cuyo resultado no se lee, repitiendo hasta que no quede ninguna. Un `call` con el resultado sin usar se conserva pero deja de guardarlo. |
+| `label_target(f, label)`, `label_follows(f, i, label)`, `final_target(f, label)` | Auxiliares de saltos: dónde queda realmente una etiqueta (la primera instrucción que no es etiqueta), si una etiqueta está justo a continuación de una instrucción, y el destino final de un salto que va a otro salto (con un tope de profundidad para los ciclos). |
+| `jumps_func(f, st)` | **jumps.** Resuelve los saltos condicionales con condición constante, redirige los saltos a saltos, elimina los saltos a la instrucción siguiente y las etiquetas que nadie usa. |
+| `temps_func(f)` | **temps.** Renumera los temporales que se usan como `t1`, `t2`, ... sin huecos y baja `ntemps`, lo que achica el marco de pila. |
 
