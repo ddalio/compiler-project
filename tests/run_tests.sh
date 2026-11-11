@@ -161,7 +161,7 @@ done
 
 echo "== Tests unitarios (tabla de simbolos, tipos, AST, codigo intermedio e interprete) =="
 if [ -n "$UNIT_DIR" ]; then
-    for unit in test_symtab test_ast test_ir test_interp test_x86gen; do
+    for unit in test_symtab test_ast test_ir test_interp test_x86gen test_flow test_opt; do
         if [ ! -x "$UNIT_DIR/$unit" ]; then
             bad "$unit" "no se encuentra $UNIT_DIR/$unit (correr 'make test')"
         elif "$UNIT_DIR/$unit" > "$TMP/unit.out" 2>&1; then
