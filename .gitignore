@@ -6,4 +6,9 @@ build-asan/
 
 # Salidas del compilador (archivos de etapa)
 *.lex
+*.sint
+*.sem
+*.ci
+*.opt
+*.ass
 *.out
