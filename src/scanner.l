@@ -1,7 +1,7 @@
 /*
  * scanner.l - Analizador lexico de C-TDS (Etapa 1).
  *
- * Reglas tomadas de "01-TDS-spec-lenguaje":
+ * Reglas:
  *   - Palabras reservadas: solo minusculas; el lenguaje es case-sensitive.
  *   - Identificador:  alpha (alpha | digit | '_')*
  *   - Entero:         digit+            (32 bits con signo)

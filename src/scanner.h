@@ -21,7 +21,7 @@ int yylex(void);
 
 /* Valor semantico del ultimo token: yylval.node es una hoja del arbol de
  * parsing para tipos, identificadores, literales y operadores, y NULL para el
- * resto. Quien consume el token es dueno de la hoja (node_free). */
+ * resto. Quien consume el token es dueño de la hoja (node_free). */
 
 /* Texto (lexema) del ultimo token devuelto por yylex. */
 extern char *yytext;

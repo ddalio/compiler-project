@@ -12,3 +12,4 @@ build-asan/
 *.opt
 *.ass
 *.out
+docs/guia-del-codigo.md

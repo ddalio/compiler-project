@@ -4,12 +4,7 @@ Compilador **c-tds** para C-TDS. Implementación en C con **flex**, **bison** y 
 Checklist de la etapa: [etapa-4-codigo-intermedio-checklist.md](etapa-4-codigo-intermedio-checklist.md).
 Explicación de cada archivo y función: [guia-del-codigo.md](guia-del-codigo.md).
 
-## 1. División del trabajo
-
-El proyecto lo realiza una sola persona, **Damián Dalio**, que se encargó de todas las
-tareas de la etapa.
-
-## 2. Decisiones de diseño, asunciones y aclaraciones
+## 1. Decisiones de diseño, asunciones y aclaraciones
 
 La especificación (`00-TDS-proyecto`, `01-TDS-spec-lenguaje`, la clase de código intermedio `05-TDS-GenCodInt` y el
 tutorial de generación de assembly de la cátedra) deja abiertos varios detalles. Estas son las decisiones tomadas
@@ -135,7 +130,7 @@ end
 
 Cada `jz`/`jmp` sigue las decisiones 7 y 8: `L1` es la etiqueta del `if` sin `else`; `L2` y `L3` son el inicio y el fin del `while`, creadas antes que `L4`, la etiqueta del cortocircuito de `&&`.
 
-## 3. Diseño y decisiones clave
+## 2. Diseño y decisiones clave
 
 ### Representación del código intermedio (`ir.h`, `ir.c`)
 
@@ -211,7 +206,7 @@ global del mismo nombre (`@x`), y cortocircuito anidado (`true && (false || b) &
 rechaza con un error por cada aparición y las posiciones correctas. Sin errores de memoria con AddressSanitizer y UBSan.
 Los tests permanentes se agregan en la sección de testing.
 
-## 4. Detalles de implementación
+## 3. Detalles de implementación
 
 ### Integración en el compilador (`main.c`)
 
@@ -288,7 +283,7 @@ division by zero` con código 1, y una recursión infinita informa `runtime erro
 que `-run` con otro target, con un error semántico y con un programa con `float` se comporta como corresponde. Sin errores
 de memoria con AddressSanitizer y UBSan. Los tests permanentes se agregan en la sección de testing.
 
-## 5. Testing
+## 4. Testing
 
 Los casos están en `tests/codinter/` y `tests/unit/` y los ejecuta `tests/run_tests.sh` (`make test`). Los `.expected` están
 escritos a mano: el código intermedio de cada caso se derivó a mano aplicando las decisiones de la sección 2 (incluidos el
@@ -359,7 +354,7 @@ variable pasa a llamarse `t1.2` o `L1.2`) y se agregaron un test unitario (`test
 programas (`names_like_temporaries` en `valid/` y en `run/`). El caso del `ret` duplicado en un método `void` que termina con `return;`
 (`calls_statements`) deja documentado ese comportamiento (decisión 11).
 
-## 6. Problemas conocidos
+## 5. Problemas conocidos
 
 - **`float` no está soportado en el código intermedio** (decisión 12). Un programa con números reales pasa el análisis
   semántico (`-target sem`) pero se rechaza al generar código, y por lo tanto tampoco se puede ejecutar con `-run`.

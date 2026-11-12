@@ -4,12 +4,7 @@ Compilador **c-tds** para C-TDS. Implementación en C con **flex**, **bison** y 
 Checklist de la etapa: [etapa-5-codigo-objeto-checklist.md](etapa-5-codigo-objeto-checklist.md).
 Explicación de cada archivo y función: [guia-del-codigo.md](guia-del-codigo.md).
 
-## 1. División del trabajo
-
-El proyecto lo realiza una sola persona, **Damián Dalio**, que se encargó de todas las
-tareas de la etapa.
-
-## 2. Decisiones de diseño, asunciones y aclaraciones
+## 1. Decisiones de diseño, asunciones y aclaraciones
 
 La especificación (`00-TDS-proyecto` y el tutorial de generación de assembly de la cátedra, `x86-64-architecture-guide`)
 deja abiertos varios detalles. Estas son las decisiones tomadas **antes** de escribir código. Las que interpretan algo que la
@@ -143,7 +138,7 @@ código 0). Los argumentos se cargan en `%edi` y `%esi` recién en el `call` (de
 `a` en `-8(%rbp)`, `b` en `-16(%rbp)` y `t1` en `-24(%rbp)`; el marco de 24 bytes se redondea a 32. `main`, que es `void`, termina con
 `movl $0, %eax` (decisión 16).
 
-## 3. Diseño y decisiones clave
+## 2. Diseño y decisiones clave
 
 ### Generador de assembly (`x86gen.h`, `x86gen.c`)
 
@@ -183,7 +178,7 @@ decisión 19), `INT_MIN / -1`, un resultado negativo (`-5` sale como 251) y uno 
 sin inicializar (vale 0) y el orden de evaluación con una global modificada por un método. Sin errores de memoria del generador con
 AddressSanitizer y UBSan. Los tests permanentes se agregan en la sección de testing.
 
-## 4. Detalles de implementación
+## 3. Detalles de implementación
 
 ### Integración en el compilador (`main.c`)
 
@@ -230,7 +225,7 @@ con código 2; un error semántico y un programa con `float` no generan ejecutab
 informa `cannot run 'gcc'` con código 2. Con AddressSanitizer y UBSan no hay errores de memoria sobre los programas de prueba de
 las etapas 1 a 4 por el camino del ejecutable y por el del assembly. Los tests permanentes se agregan en la sección de testing.
 
-## 5. Testing
+## 4. Testing
 
 Los casos están en `tests/assembly/`, `tests/native/` y `tests/unit/` (y se reutilizan los de `tests/codinter/run/`), y los
 ejecuta `tests/run_tests.sh` (`make test`). Los `.expected` están escritos a mano: el assembly se derivó aplicando las decisiones de
@@ -288,7 +283,7 @@ nativos dieron el resultado esperado. Al preparar los problemas conocidos se enc
 todos los targets: `-o` podía apuntar al propio fuente y reemplazarlo (decisión 23); se corrigió y se agregó un test. El único defecto encontrado fue un error del propio test unitario (verificaba que no hubiera `pushq`
 en una llamada de 6 argumentos, pero el prólogo tiene `pushq %rbp`), corregido en el test.
 
-## 6. Problemas conocidos
+## 5. Problemas conocidos
 
 - **Solo Linux x86-64 con `gcc`.** El assembly es de Linux (sintaxis AT&T de GNU, `%rip`, `.note.GNU-stack`) y el ejecutable se arma con
   `gcc`, que tiene que estar en el `PATH`; no hay una opción para elegir otra herramienta. En macOS o Windows solo sirve

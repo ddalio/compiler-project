@@ -4,12 +4,7 @@ Compilador **c-tds** para C-TDS. Implementación en C con **flex**, **bison** y 
 Checklist de la etapa: [etapa-6-optimizador-checklist.md](etapa-6-optimizador-checklist.md).
 Explicación de cada archivo y función: [guia-del-codigo.md](guia-del-codigo.md).
 
-## 1. División del trabajo
-
-El proyecto lo realiza una sola persona, **Damián Dalio**, que se encargó de todas las
-tareas de la etapa.
-
-## 2. Decisiones de diseño, asunciones y aclaraciones
+## 1. Decisiones de diseño, asunciones y aclaraciones
 
 La cátedra define esta etapa así: *"las extensiones, optimizaciones y/o análisis a realizar son determinadas de común acuerdo con
 cada grupo"*, *"por defecto, ninguna optimización es realizada"* y `-opt [optimización]` *"realiza la lista de optimizaciones; `all`
@@ -30,7 +25,7 @@ realiza todas las soportadas"*. La lista de la sección siguiente se acordó con
 | 10 | Lo que no se hace | No se eliminan las declaraciones de variables locales aunque queden sin uso (siguen reservando su posición del marco y su inicialización en 0), no se propaga entre bloques ni se hace análisis de vida de variables, no se reduce la fuerza de operaciones (`x * 2` queda como está) ni se optimiza el assembly. |
 | 11 | Reales | Fuera de alcance por indicación del docente: un programa con `float` se sigue rechazando al generar el código intermedio. |
 
-## 3. Diseño y decisiones clave
+## 2. Diseño y decisiones clave
 
 El optimizador está en dos módulos: **`flow`** (análisis: qué lee y escribe cada instrucción, bloques básicos y grafo de flujo de control)
 y **`opt`** (las cinco optimizaciones y el punto fijo). Cada optimización es una función que recorre el código de **un método**, lo
@@ -127,7 +122,7 @@ int main() {                                func main()
 
 El programa devuelve 14 igual que antes. Las declaraciones de `x` y `y` se conservan (decisión 10).
 
-## 4. Detalles de implementación
+## 3. Detalles de implementación
 
 ### Integración en el compilador (`main.c`)
 
@@ -155,7 +150,7 @@ Efecto medido sobre esos 52 programas: de **603 a 420 instrucciones** de código
 pliegue en el momento, ver el hallazgo de la sección 5); en el programa de ejemplo de la sección 3, el assembly pasa de 83 a 21 líneas. Sin errores de memoria
 con AddressSanitizer y UBSan. Los tests permanentes del optimizador están en la sección 5.
 
-## 5. Testing
+## 4. Testing
 
 Hay dos clases de tests del optimizador, y las dos comparan con resultados **escritos a mano antes de correr nada**, no copiados de la salida del compilador:
 

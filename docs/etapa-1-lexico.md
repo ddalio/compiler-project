@@ -25,7 +25,7 @@ decisiones tomadas:
 | 8 | Errores | Un error léxico no detiene el análisis: se informa y se sigue, así una corrida reporta todos los errores. Los errores van a `stderr` con el formato `archivo:línea:columna: lexical error: mensaje`. |
 | 9 | Posición | Líneas y columnas desde 1. Un tab ocupa una columna. La columna cuenta bytes, no caracteres UTF-8. |
 | 10 | Salida | El archivo `.lex` tiene un token por línea: `línea:columna NOMBRE lexema`. Si hay errores léxicos **no se genera** el archivo. |
-| 11 | Nombre de salida | Por defecto es el nombre del fuente con extensión `.lex`, en la misma carpeta que el fuente. `-o <salida>` lo reemplaza. |
+| 11 | Nombre de salida | Por defecto es el nombre del archivo fuente con extensión `.lex`, en la misma carpeta que el archivo fuente. `-o <salida>` lo reemplaza. |
 | 12 | Sin `-debug` | Una corrida exitosa no imprime nada. Con `-debug` los tokens también se imprimen por `stdout`. |
 | 13 | Código de salida | `0` correcto, `1` errores léxicos, `2` error de uso o de archivos. |
 | 14 | Nombre de archivo | Debe terminar en `.ctds`. Un argumento que empieza con `-` se interpreta como opción, por lo que ningún archivo de entrada puede empezar con `-`. |
@@ -40,19 +40,6 @@ decisiones tomadas:
 | `src/scanner.h` | Interfaz del scanner (`scanner_init`, `yylex`, posición y cantidad de errores). |
 | `src/tokens.h`, `src/tokens.c` | Nombre imprimible de cada token. _(Actualización etapa 2: los códigos de los tokens dejaron de ser un `enum TokenType` escrito a mano; ahora los define bison, ver la documentación de la etapa 2.)_ |
 | `src/main.c` | Línea de comandos, validación de argumentos y escritura del `.lex`. _(Actualización etapa 2: también ejecuta el parser.)_ |
-
-**Alternativas consideradas**
-
-- *Scanner a mano vs. flex.* Se eligió flex: es la herramienta que pide la cátedra, el autómata
-  se genera a partir de las expresiones regulares y la especificación queda cercana a la gramática.
-- *Qué hacer ante un error léxico.* Alternativas: abortar en el primer error, o devolver un token
-  `ERROR`. Se descartó abortar porque obliga a corregir de a un error por corrida. Se descartó el token
-  `ERROR` porque, hasta ahora, ningún consumidor lo necesita; el scanner descarta el símbolo
-  inválido y sigue.
-- *Dónde escribir la salida.* Los tokens se acumulan en memoria y recién se escriben al archivo si
-  no hubo errores. Así nunca queda un `.lex` incompleto al lado del fuente.
-- *Tokens para `true` y `false`.* Como terminales de la gramática, son palabras reservadas y se
-  mantienen como tal; el análisis semántico decidirá cómo representarlos.
 
 ## 4. Detalles de implementación
 

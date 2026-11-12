@@ -4,12 +4,7 @@ Compilador **c-tds** para C-TDS. Implementación en C con **flex**, **bison** y 
 Checklist de la etapa: [etapa-3-semantico-checklist.md](etapa-3-semantico-checklist.md).
 Explicación de cada archivo y función: [guia-del-codigo.md](guia-del-codigo.md).
 
-## 1. División del trabajo
-
-El proyecto lo realiza una sola persona, **Damián Dalio**, que se encargó de todas las
-tareas de la etapa.
-
-## 2. Decisiones de diseño, asunciones y aclaraciones
+## 1. Decisiones de diseño, asunciones y aclaraciones
 
 La especificación (`00-TDS-proyecto`, `01-TDS-spec-lenguaje` y las clases de AST y tabla de símbolos) deja
 abiertos varios detalles. Estas son las decisiones tomadas **antes** de escribir código. Algunas
@@ -53,7 +48,7 @@ entendiera de otro modo, solo habría que cambiar el chequeo correspondiente.
 | 21 | Etapa 2 | El árbol de parsing y el `.sint` **no cambian**. Solo se agregan posiciones a los nodos, que el `.sint` no imprime, por lo que sus tests siguen valiendo tal cual. |
 | 22 | Programa de ejemplo de la spec | El programa de ejemplo de `01-TDS-spec-lenguaje` es **sintácticamente** válido pero **no semánticamente**: su `main` es `void` y ejecuta `return 1;` y `return inc(y);`, lo que viola la regla 6 (en un método `void`, `return` no puede llevar expresión). El compilador informa esos dos errores. Se respeta la regla y no se la relaja para que el ejemplo pase; en los tests semánticos el ejemplo se usa como caso inválido y se agrega una versión corregida como caso válido. |
 
-## 3. Diseño y decisiones clave
+## 2. Diseño y decisiones clave
 
 ### Posiciones en el árbol de parsing (cambio en etapas anteriores)
 
@@ -244,7 +239,7 @@ se espera `int`, `while (true)` sin `return` posterior, `if/else` con `return` e
 coinciden con los calculados a mano. Se comprobó también que los tipos se propagan en el AST (`1 + 2.5` es `float`,
 `f < 3 && true` es `boolean`) y que no hay errores de memoria con AddressSanitizer y UBSan.
 
-## 4. Detalles de implementación
+## 3. Detalles de implementación
 
 ### Integración en el compilador (`main.c`)
 
@@ -294,7 +289,7 @@ con `-o`, con `-debug` y con los otros targets (`scan`, `parse`, y el rechazo de
 compilador compilado con AddressSanitizer y UBSan sobre todos los programas de prueba de las etapas 1 y 2, con y sin
 `-debug`, sin errores de memoria. Los tests permanentes de esta etapa se agregan en la sección de testing.
 
-## 5. Testing
+## 4. Testing
 
 Los casos están en `tests/semantic/` y `tests/unit/` y los ejecuta `tests/run_tests.sh` (`make test`). Los `.expected`
 están escritos a mano a partir de las reglas de la spec, no copiados de la salida del compilador: los mensajes y
@@ -359,7 +354,7 @@ ambos casos fallaron.
 (ya registrado en la decisión 22); por eso se agregó su versión corregida. Los demás `.expected`, calculados a mano,
 coincidieron con la salida del compilador sin necesidad de cambiar el código.
 
-## 6. Problemas conocidos
+## 5. Problemas conocidos
 
 - **`-target sem` es una extensión.** La cátedra lista los targets `scan`, `parse`, `codinter` y `assembly` pero no uno para
   el análisis semántico, aunque sí define la extensión de salida `.sem`. Se agregó `sem` y es el target por defecto; conviene
