@@ -175,10 +175,11 @@ static void analyze_binary(Ctx *c, Ast *e)
 
     switch (e->op) {
     case OP_EQ:                             /* regla 11 */
+    case OP_NE:
         if (!types_compatible(l, r))
             sem_error(c, e->line, e->col,
-                      "operands of '==' must have the same type, got %s and %s",
-                      type_name(l), type_name(r));
+                      "operands of '%s' must have the same type, got %s and %s",
+                      op_text(e->op), type_name(l), type_name(r));
         else
             e->type = TYPE_BOOLEAN;
         break;

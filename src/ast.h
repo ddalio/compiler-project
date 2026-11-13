@@ -61,7 +61,7 @@ typedef enum {
 typedef enum {
     OP_NONE,
     OP_ADD, OP_SUB, OP_MUL, OP_DIV, OP_MOD,     /* aritmeticos */
-    OP_LT, OP_GT, OP_EQ,                        /* relacionales */
+    OP_LT, OP_GT, OP_EQ, OP_NE,                 /* relacionales */
     OP_AND, OP_OR,                              /* logicos */
     OP_NOT,                                     /* ! (unario) */
     OP_NEG                                      /* - (unario) */

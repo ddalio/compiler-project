@@ -104,7 +104,8 @@ static OpKind op_of_leaf(const Node *leaf, int unary)
     static const struct { const char *label; OpKind op; } ops[] = {
         { "PLUS", OP_ADD }, { "STAR", OP_MUL }, { "SLASH", OP_DIV },
         { "PERCENT", OP_MOD }, { "LT", OP_LT }, { "GT", OP_GT },
-        { "EQ", OP_EQ }, { "AND", OP_AND }, { "OR", OP_OR }, { "NOT", OP_NOT },
+        { "EQ", OP_EQ }, { "NE", OP_NE }, { "AND", OP_AND }, { "OR", OP_OR },
+        { "NOT", OP_NOT },
     };
 
     if (is(leaf, "MINUS"))
@@ -324,6 +325,7 @@ const char *op_text(OpKind op)
     case OP_LT:   return "<";
     case OP_GT:   return ">";
     case OP_EQ:   return "==";
+    case OP_NE:   return "!=";
     case OP_AND:  return "&&";
     case OP_OR:   return "||";
     case OP_NOT:  return "!";
