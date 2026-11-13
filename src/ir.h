@@ -150,8 +150,8 @@ void ir_print_instr(FILE *out, const Instr *in);
 
 /* Posicion (desde 0) de un operando dentro del marco de su metodo: primero los
  * parametros, despues las locales y al final los temporales (t1 es el primero
- * de ellos). Vale para temporales y para variables que no son globales. Lo usan
- * el interprete y el generador de assembly, para que ubiquen igual cada valor. */
+ * de ellos). Vale para temporales y para variables que no son globales. Lo usa
+ * el generador de assembly para ubicar cada valor en el marco de pila. */
 int ir_slot(const IrFunc *f, Operand o);
 
 #endif /* IR_H */

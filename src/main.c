@@ -14,9 +14,6 @@
  *                    propagate, dce, jumps, temps, o all (todas). Se puede
  *                    repetir. Sin -opt no se optimiza nada
  *   -debug           imprime informacion de depuracion
- *   -run             ejecuta el codigo intermedio generado desde main e imprime
- *                    el valor que devuelve (si devuelve uno); implica
- *                    -target codinter y no se puede combinar con otro target
  *
  * Salida de cada etapa:
  *   scan   archivo <nombre>.lex con un token por linea:
@@ -58,7 +55,6 @@
 #include <unistd.h>
 
 #include "ast.h"
-#include "interp.h"
 #include "ir.h"
 #include "irgen.h"
 #include "opt.h"
@@ -79,7 +75,6 @@ typedef struct {
     const char *output;     /* NULL => nombre por defecto */
     const char *target;     /* etapa final */
     int debug;
-    int run;                /* -run: interpretar el codigo intermedio */
     unsigned opt_mask;      /* optimizaciones pedidas con -opt (bits de opt.h) */
 } Options;
 
@@ -94,9 +89,7 @@ static void usage(FILE *out)
         "                   assembly. Without it the executable <file>.out is built\n"
         "  -opt <name>      enable an optimization of the intermediate code: fold,\n"
         "                   propagate, dce, jumps, temps or all (may be repeated)\n"
-        "  -debug           print debugging information\n"
-        "  -run             run the generated intermediate code and print the value\n"
-        "                   returned by main (implies -target codinter)\n");
+        "  -debug           print debugging information\n");
 }
 
 static int has_extension(const char *name, const char *ext)
@@ -139,7 +132,6 @@ static int parse_args(int argc, char **argv, Options *opt)
     opt->output = NULL;
     opt->target = NULL;             /* sin -target: se genera el ejecutable */
     opt->debug = 0;
-    opt->run = 0;
     opt->opt_mask = 0;
 
     for (int i = 1; i < argc; i++) {
@@ -162,8 +154,6 @@ static int parse_args(int argc, char **argv, Options *opt)
                 opt->target = argv[++i];
         } else if (strcmp(a, "-debug") == 0) {
             opt->debug = 1;
-        } else if (strcmp(a, "-run") == 0) {
-            opt->run = 1;
         } else if (strcmp(a, "-opt") == 0) {
             unsigned bit;
 
@@ -194,14 +184,8 @@ static int parse_args(int argc, char **argv, Options *opt)
                 opt->input, SOURCE_EXT);
         return 0;
     }
-    if (!opt->target && opt->run)
-        opt->target = "codinter";       /* -run implica -target codinter */
     if (opt->target && !check_target(opt->target))
         return 0;
-    if (opt->run && strcmp(opt->target, "codinter") != 0) {
-        fprintf(stderr, "c-tds: option '-run' requires -target codinter\n");
-        return 0;
-    }
     if (opt->target && opt->opt_mask != 0 &&
         (strcmp(opt->target, "scan") == 0 || strcmp(opt->target, "parse") == 0 ||
          strcmp(opt->target, "sem") == 0)) {
@@ -454,19 +438,6 @@ static int run_sem(const Options *opt)
     return status;
 }
 
-/* -run: ejecuta el codigo intermedio desde main. Si main devuelve un valor lo
- * imprime en una linea por stdout (un boolean sale como 1 o 0). */
-static int run_program(const IrProgram *prog)
-{
-    int has_value, value;
-
-    if (interp_run(prog, &has_value, &value) != 0)
-        return EXIT_SRC_ERROR;          /* error de ejecucion, ya informado */
-    if (has_value)
-        printf("%d\n", value);
-    return EXIT_OK;
-}
-
 /* Front end completo y generacion de codigo intermedio. Devuelve EXIT_OK si el
  * programa no tiene ningun error (lexico, sintactico, semantico ni de
  * generacion): entonces `f` y *prog siguen vivos y el que llama debe liberarlos
@@ -516,8 +487,6 @@ static int run_codinter(const Options *opt, const char *ext)
     status = write_output(opt, ext, print_ir_cb, prog);
     if (opt->debug)
         ir_print(stdout, prog);
-    if (opt->run && status == EXIT_OK)
-        status = run_program(prog);
     ir_program_free(prog);
     front_free(&f);
     return status;

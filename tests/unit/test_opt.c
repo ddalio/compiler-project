@@ -155,7 +155,7 @@ static void test_fold_constants(void)
     free(got);
 }
 
-/* Aritmetica de 32 bits que da la vuelta, igual que el interprete. */
+/* Aritmetica de 32 bits que da la vuelta, igual que el codigo nativo. */
 static void build_fold_wraparound(IrProgram *p, IrFunc *f)
 {
     (void)p;

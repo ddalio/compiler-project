@@ -13,15 +13,16 @@
 #   tests/optimizer/*.ctds  -> <caso>.expected = codigo optimizado esperado
 #       (-target opt, todas las optimizaciones) y <caso>.<optimizacion>.expected
 #       = el esperado con solo esa optimizacion. Escritos a mano.
-#   Equivalencia: los programas de tests/codinter/run, run_errors, native y
-#       optimizer dan lo mismo sin optimizar y con cada -opt (interprete y, si
-#       hay gcc, ejecutable nativo).
+#   Equivalencia: los programas de tests/codinter/programs, native y optimizer
+#       dan lo mismo sin optimizar y con cada -opt (el codigo de salida y la
+#       salida del ejecutable; necesita gcc).
 #   Opcion -opt de la linea de comandos y tests/unit/test_flow.c, test_opt.c.
 # Etapa 5 (codigo objeto):
 #   tests/assembly/*.ctds   -> <caso>.expected = assembly esperado (-target assembly)
 #   tests/native/*.ctds     -> <caso>.expected = codigo de salida del ejecutable
-#   tests/codinter/run/*.ctds tambien se compilan a ejecutable: su codigo de
-#       salida debe ser el valor que devuelve el interprete, modulo 256.
+#   tests/codinter/programs/*.ctds -> <caso>.expected = el valor que devuelve
+#       main; se compilan a ejecutable y su codigo de salida debe ser ese valor
+#       modulo 256.
 #   Los tests que arman un ejecutable necesitan Linux x86-64 y gcc; si no estan
 #   se omiten con un aviso.
 #   tests/unit/test_x86gen.c -> unitario del generador de assembly.
@@ -30,12 +31,7 @@
 #   tests/codinter/valid/*.ctds     -> <caso>.expected = contenido esperado del .ci
 #   tests/codinter/errors/*.ctds    -> <caso>.expected = stderr esperado (codigo 1,
 #                                      sin archivo de salida)
-#   tests/codinter/run/*.ctds       -> <caso>.expected = stdout de `-run` (el valor
-#                                      que devuelve main); codigo de salida 0
-#   tests/codinter/run_errors/*.ctds -> <caso>.expected = stderr de `-run` (error
-#                                      de ejecucion); codigo 1, nada por stdout
-#   tests/unit/test_ir.c, test_interp.c -> unitarios del codigo intermedio y del
-#       interprete.
+#   tests/unit/test_ir.c -> unitario del codigo intermedio.
 #
 # Etapa 3 (semantico):
 #   tests/semantic/valid/*.ctds   -> <caso>.expected = contenido esperado del .sem
@@ -167,9 +163,9 @@ for src in "$ROOT"/tests/parser/errors/*.ctds; do
     fi
 done
 
-echo "== Tests unitarios (tabla de simbolos, tipos, AST, codigo intermedio e interprete) =="
+echo "== Tests unitarios (tabla de simbolos, tipos, AST, codigo intermedio, assembly, flujo y optimizador) =="
 if [ -n "$UNIT_DIR" ]; then
-    for unit in test_symtab test_ast test_ir test_interp test_x86gen test_flow test_opt; do
+    for unit in test_symtab test_ast test_ir test_x86gen test_flow test_opt; do
         if [ ! -x "$UNIT_DIR/$unit" ]; then
             bad "$unit" "no se encuentra $UNIT_DIR/$unit (correr 'make test')"
         elif "$UNIT_DIR/$unit" > "$TMP/unit.out" 2>&1; then
@@ -262,38 +258,6 @@ for src in "$ROOT"/tests/codinter/errors/*.ctds; do
     fi
 done
 
-echo "== Interprete: programas (-run) =="
-for src in "$ROOT"/tests/codinter/run/*.ctds; do
-    name="$(basename "$src" .ctds)"
-    expected="${src%.ctds}.expected"
-    run "$(dirname "$src")" -run -o "$TMP/run.ci" "$name.ctds"
-    if [ $status -ne 0 ]; then
-        bad "$name" "exit code $status (se esperaba 0): $(cat "$TMP/stderr")"
-    elif [ -s "$TMP/stderr" ]; then
-        bad "$name" "no debe haber nada por stderr: $(cat "$TMP/stderr")"
-    elif ! diff -u "$expected" "$TMP/stdout" > "$TMP/diff"; then
-        bad "$name" "$(cat "$TMP/diff")"
-    else
-        ok "$name"
-    fi
-done
-
-echo "== Interprete: errores de ejecucion =="
-for src in "$ROOT"/tests/codinter/run_errors/*.ctds; do
-    name="$(basename "$src" .ctds)"
-    expected="${src%.ctds}.expected"
-    run "$(dirname "$src")" -run -o "$TMP/run.ci" "$name.ctds"
-    if [ $status -ne 1 ]; then
-        bad "$name" "exit code $status (se esperaba 1)"
-    elif [ -s "$TMP/stdout" ]; then
-        bad "$name" "un error de ejecucion no debe imprimir resultado: $(cat "$TMP/stdout")"
-    elif ! diff -u "$expected" "$TMP/stderr" > "$TMP/diff"; then
-        bad "$name" "$(cat "$TMP/diff")"
-    else
-        ok "$name"
-    fi
-done
-
 echo "== Assembly: casos con el assembly esperado (-target assembly) =="
 for src in "$ROOT"/tests/assembly/*.ctds; do
     name="$(basename "$src" .ctds)"
@@ -317,10 +281,10 @@ for src in "$ROOT"/tests/assembly/*.ctds; do
     fi
 done
 
-echo "== Ejecutables: los programas del interprete, compilados a codigo nativo =="
+echo "== Ejecutables: los programas de tests/codinter/programs =="
 if [ $NATIVE -eq 1 ]; then
     mkdir -p "$TMP/native"
-    for src in "$ROOT"/tests/codinter/run/*.ctds; do
+    for src in "$ROOT"/tests/codinter/programs/*.ctds; do
         name="$(basename "$src" .ctds)"
         value="$(cat "${src%.ctds}.expected")"
         [ -z "$value" ] && value=0
@@ -335,7 +299,7 @@ if [ $NATIVE -eq 1 ]; then
         if [ $got -eq $want ]; then
             ok "$name (sale con $got = $value mod 256)"
         else
-            bad "$name" "el ejecutable salio con $got y el interprete da $value (mod 256 = $want)"
+            bad "$name" "el ejecutable salio con $got y main devuelve $value (mod 256 = $want)"
         fi
     done
 
@@ -410,41 +374,18 @@ for src in "$ROOT"/tests/optimizer/*.ctds; do
     done
 done
 
-echo "== Optimizador: el programa optimizado hace lo mismo (interprete) =="
-# Cada programa de las carpetas de abajo se interpreta sin optimizar y con cada
-# optimizacion (sola y con all): debe dar la misma salida, el mismo mensaje de
-# error de ejecucion y el mismo codigo de salida.
+echo "== Optimizador: el ejecutable optimizado hace lo mismo que sin optimizar =="
+# Cada programa se compila a ejecutable sin optimizar y con -opt all y con cada
+# optimizacion sola: el codigo de salida y la salida tienen que ser iguales. Esto
+# incluye los programas que fallan a proposito (una division por cero tiene que
+# seguir terminando con la misma senal).
 opt_variants="all fold propagate dce jumps temps"
-for dir in codinter/run codinter/run_errors native optimizer; do
-    for src in "$ROOT/tests/$dir"/*.ctds; do
-        name="$(basename "$src" .ctds)"
-        run "$ROOT/tests/$dir" -run -o "$TMP/eq.ci" "$name.ctds"
-        base_status=$status
-        cp "$TMP/stdout" "$TMP/base_stdout"; cp "$TMP/stderr" "$TMP/base_stderr"
-        diffs=""
-        for v in $opt_variants; do
-            run "$ROOT/tests/$dir" -run -opt "$v" -o "$TMP/eq.ci" "$name.ctds"
-            if [ $status -ne $base_status ] || ! cmp -s "$TMP/stdout" "$TMP/base_stdout" ||
-               ! cmp -s "$TMP/stderr" "$TMP/base_stderr"; then
-                diffs="$diffs $v"
-            fi
-        done
-        if [ -z "$diffs" ]; then
-            ok "$dir/$name (6 variantes iguales a sin optimizar)"
-        else
-            bad "$dir/$name" "distinto con -opt:$diffs (sin optimizar: exit $base_status, stdout $(cat "$TMP/base_stdout"))"
-        fi
-    done
-done
-
-echo "== Optimizador: el ejecutable optimizado hace lo mismo (codigo nativo) =="
 if [ $NATIVE -eq 1 ]; then
     mkdir -p "$TMP/eqnat"
-    for dir in codinter/run native optimizer; do
+    for dir in codinter/programs native optimizer; do
         for src in "$ROOT/tests/$dir"/*.ctds; do
             name="$(basename "$src" .ctds)"
-            # En optimizer/ se prueban tambien las optimizaciones de a una.
-            if [ "$dir" = optimizer ]; then variants="all fold propagate dce jumps temps"; else variants="all"; fi
+            variants="$opt_variants"
             run "$ROOT/tests/$dir" -o "$TMP/eqnat/base" "$name.ctds"
             if [ $status -ne 0 ]; then
                 bad "$dir/$name" "no se pudo compilar sin optimizar (exit $status): $(cat "$TMP/stderr")"
@@ -656,15 +597,6 @@ else
     bad "-o <salida> -target codinter" "exit $status"
 fi
 
-# -run: escribe el .ci y ademas ejecuta el programa.
-cp "$ROOT/tests/codinter/run/factorial.ctds" "$TMP/default/fact.ctds"
-run "$TMP/default" -run fact.ctds
-if [ $status -eq 0 ] && [ "$(cat "$TMP/stdout")" = "3628800" ] && [ -f "$TMP/default/fact.ci" ]; then
-    ok "-run: escribe el .ci y ejecuta"
-else
-    bad "-run: escribe el .ci y ejecuta" "exit $status; stdout: $(cat "$TMP/stdout"); archivos: $(ls "$TMP/default")"
-fi
-
 # -o no puede apuntar al propio fuente: lo pisaria con la salida (por el mismo
 # nombre o por otro nombre del mismo archivo, como un enlace).
 cp "$ROOT/tests/semantic/valid/recursion.ctds" "$TMP/default/own.ctds"
@@ -679,25 +611,12 @@ else
     bad "-o no puede pisar el archivo fuente (ni con otro nombre)" "exit $same1 y $status: $(cat "$TMP/stderr")"
 fi
 
-# -run solo vale con -target codinter.
-cli "-run con -target sem"       2 "requires -target codinter" -- -run -target sem keywords.ctds
-cli "-run con -target parse"     2 "requires -target codinter" -- -run -target parse keywords.ctds
-
-# -run con -debug: primero el codigo intermedio y despues el resultado.
-run "$TMP/default" -run -debug -o debug.ci fact.ctds
-if [ $status -eq 0 ] && head -n 1 "$TMP/stdout" | grep -qF "func fact(n)" &&
-   [ "$(tail -n 1 "$TMP/stdout")" = "3628800" ]; then
-    ok "-run -debug: codigo y despues resultado"
-else
-    bad "-run -debug: codigo y despues resultado" "exit $status: $(head -n 2 "$TMP/stdout")"
-fi
-
-# Con un error semantico no se genera codigo ni se ejecuta nada.
-run "$ROOT/tests/semantic/errors" -run -o "$TMP/never.ci" rule2_undeclared.ctds
+# Con un error semantico no se genera codigo.
+run "$ROOT/tests/semantic/errors" -target codinter -o "$TMP/never.ci" rule2_undeclared.ctds
 if [ $status -eq 1 ] && [ ! -s "$TMP/stdout" ] && [ ! -e "$TMP/never.ci" ]; then
-    ok "-run con error semantico: no genera ni ejecuta"
+    ok "-target codinter con error semantico: no genera codigo"
 else
-    bad "-run con error semantico: no genera ni ejecuta" "exit $status"
+    bad "-target codinter con error semantico: no genera codigo" "exit $status"
 fi
 
 # Un programa con float es valido para -target sem pero no para codinter.
@@ -727,7 +646,7 @@ fi
 
 # Sin -target se genera el ejecutable (necesita gcc y Linux x86-64).
 if [ "$(uname -s)" = "Linux" ] && [ "$(uname -m)" = "x86_64" ] && command -v gcc > /dev/null; then
-    cp "$ROOT/tests/codinter/run/loop_sum.ctds" "$TMP/default/exe.ctds"
+    cp "$ROOT/tests/codinter/programs/loop_sum.ctds" "$TMP/default/exe.ctds"
     run "$TMP/default" exe.ctds
     "$TMP/default/exe.out" > /dev/null 2>&1
     exe_status=$?
@@ -832,14 +751,6 @@ if [ $status -eq 0 ] && grep -qF "[opt] main: 7 -> 1 instructions, 4 -> 0 tempor
     ok "-opt -debug: estadisticas por stderr y codigo por stdout"
 else
     bad "-opt -debug: estadisticas por stderr y codigo por stdout" "exit $status: $(cat "$TMP/stderr")"
-fi
-
-# -run con -opt: el mismo resultado y el .ci escrito es el optimizado.
-run "$OPTDIR" -opt all -run -o "$TMP/run.ci" constant_folding.ctds
-if [ $status -eq 0 ] && [ "$(cat "$TMP/stdout")" = "24" ] && grep -qF "ret 24" "$TMP/run.ci"; then
-    ok "-opt all -run: resultado 24 y .ci optimizado"
-else
-    bad "-opt all -run: resultado 24 y .ci optimizado" "exit $status: $(cat "$TMP/stdout")"
 fi
 
 # Nombre de salida por defecto: <fuente>.opt junto al fuente (y no el .ci).

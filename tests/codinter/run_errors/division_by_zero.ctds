@@ -1,5 +1,0 @@
-int main() {
-  int z;
-  z = 0;
-  return 10 / z;
-}

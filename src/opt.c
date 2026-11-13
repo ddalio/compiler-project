@@ -68,8 +68,8 @@ static void make_move(Instr *in, Operand src)
     in->b = ir_none();
 }
 
-/* Operaciones de 32 bits con signo que dan la vuelta, igual que el interprete
- * y que el codigo nativo. */
+/* Operaciones de 32 bits con signo que dan la vuelta, igual que el codigo
+ * nativo (instrucciones de 32 bits). */
 static long long wrap(uint32_t v)
 {
     return (int32_t)v;

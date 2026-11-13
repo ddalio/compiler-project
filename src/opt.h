@@ -12,7 +12,7 @@
  *   temps      compactacion de temporales (achica el marco de pila)
  *
  * Reglas de seguridad (docs/etapa-6-optimizador.md): aritmetica de 32 bits que
- * da la vuelta como en el interprete; una division o un resto por cero nunca se
+ * da la vuelta como en el codigo nativo; una division o un resto por cero nunca se
  * pliega ni se elimina; las llamadas nunca se eliminan ni se mueven y una
  * llamada invalida lo que se sabe de las variables globales.
  */

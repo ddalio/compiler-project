@@ -16,13 +16,13 @@ FLEX    ?= flex
 BISON   ?= bison
 
 OBJS    := $(BUILD)/main.o $(BUILD)/tokens.o $(BUILD)/tree.o \
-           $(BUILD)/types.o $(BUILD)/ast.o $(BUILD)/symtab.o $(BUILD)/semantic.o $(BUILD)/ir.o $(BUILD)/irgen.o $(BUILD)/interp.o $(BUILD)/x86gen.o $(BUILD)/flow.o $(BUILD)/opt.o \
+           $(BUILD)/types.o $(BUILD)/ast.o $(BUILD)/symtab.o $(BUILD)/semantic.o $(BUILD)/ir.o $(BUILD)/irgen.o $(BUILD)/x86gen.o $(BUILD)/flow.o $(BUILD)/opt.o \
            $(BUILD)/lex.yy.o $(BUILD)/bison.tab.o
 
 # Tests unitarios (tests/unit): cada uno es un ejecutable que se arma en $(BUILD).
 # Usan todos los objetos del compilador menos main.o.
 LIBOBJS    := $(filter-out $(BUILD)/main.o,$(OBJS))
-UNIT_TESTS := $(BUILD)/test_symtab $(BUILD)/test_ast $(BUILD)/test_ir $(BUILD)/test_interp $(BUILD)/test_x86gen $(BUILD)/test_flow $(BUILD)/test_opt
+UNIT_TESTS := $(BUILD)/test_symtab $(BUILD)/test_ast $(BUILD)/test_ir $(BUILD)/test_x86gen $(BUILD)/test_flow $(BUILD)/test_opt
 
 .PHONY: all test test-asan clean
 
@@ -51,7 +51,7 @@ $(BUILD)/lex.yy.c: src/scanner.l | $(BUILD)
 $(BUILD)/lex.yy.o: $(BUILD)/lex.yy.c src/scanner.h src/tokens.h src/tree.h $(BUILD)/bison.tab.h
 	$(CC) $(CFLAGS) -Wno-unused-function -c $< -o $@
 
-$(BUILD)/%.o: src/%.c src/scanner.h src/parser.h src/tokens.h src/tree.h src/types.h src/ast.h src/symtab.h src/semantic.h src/ir.h src/irgen.h src/interp.h src/x86gen.h src/flow.h src/opt.h \
+$(BUILD)/%.o: src/%.c src/scanner.h src/parser.h src/tokens.h src/tree.h src/types.h src/ast.h src/symtab.h src/semantic.h src/ir.h src/irgen.h src/x86gen.h src/flow.h src/opt.h \
                $(BUILD)/bison.tab.h | $(BUILD)
 	$(CC) $(CFLAGS) -c $< -o $@
 
@@ -64,10 +64,6 @@ $(BUILD)/test_symtab: tests/unit/test_symtab.c $(BUILD)/symtab.o $(BUILD)/types.
 
 $(BUILD)/test_ir: tests/unit/test_ir.c $(BUILD)/ir.o src/ir.h | $(BUILD)
 	$(CC) $(CFLAGS) tests/unit/test_ir.c $(BUILD)/ir.o -o $@
-
-$(BUILD)/test_interp: tests/unit/test_interp.c $(BUILD)/interp.o $(BUILD)/ir.o \
-                      src/interp.h src/ir.h | $(BUILD)
-	$(CC) $(CFLAGS) tests/unit/test_interp.c $(BUILD)/interp.o $(BUILD)/ir.o -o $@
 
 $(BUILD)/test_x86gen: tests/unit/test_x86gen.c $(BUILD)/x86gen.o $(BUILD)/ir.o \
                       src/x86gen.h src/ir.h | $(BUILD)
