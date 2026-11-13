@@ -48,7 +48,7 @@ más de 6 argumentos, la división con negativos, el resultado de `INT_MIN / -1`
 
 | # | Tema | Decisión |
 |---|------|----------|
-| 17 | Comparaciones y booleanos **(interpretación)** | `t = a < b` se traduce con `cmpl` y una instrucción **`set*`** (`setl`, `setg`, `sete`) seguida de `movzbl`, que deja 0 o 1 en el registro. El tutorial usa `cmov*` con dos registros cargados con 0 y 1; `set*` hace lo mismo con menos instrucciones. `t = ! a` es `cmpl $0` y `sete`. Los saltos `jz` y `jnz` cargan el operando en `%r10d` (puede ser una constante, y `cmpl` no admite dos inmediatos), hacen `testl` y saltan con `je` o `jne`. |
+| 17 | Comparaciones y booleanos **(interpretación)** | `t = a < b` se traduce con `cmpl` y una instrucción **`set*`** (`setl`, `setg`, `sete`, `setne`) seguida de `movzbl`, que deja 0 o 1 en el registro. El tutorial usa `cmov*` con dos registros cargados con 0 y 1; `set*` hace lo mismo con menos instrucciones. `t = ! a` es `cmpl $0` y `sete`. Los saltos `jz` y `jnz` cargan el operando en `%r10d` (puede ser una constante, y `cmpl` no admite dos inmediatos), hacen `testl` y saltan con `je` o `jne`. |
 | 18 | División y resto | `a / b` y `a % b` cargan `a` en `%eax`, extienden el signo a `%edx` con `cltd`, cargan `b` en `%r10d` y usan `idivl`: el cociente queda en `%eax` y el resto en `%edx`, truncados hacia cero como en C. Para que el resultado sea el de la aritmética de 32 bits que da la vuelta (decisión 19 de la etapa 4), antes de dividir se **compara el divisor con -1**: si lo es, el cociente es `-a` (`negl`) y el resto 0, sin ejecutar `idivl`, porque en x86 `INT_MIN / -1` provoca una excepción de hardware aunque en la aritmética de 32 bits que da la vuelta su resultado es `INT_MIN` (se comprobó a mano). |
 | 19 | División por cero | **No se intercepta**: `idivl` con divisor 0 es una excepción de hardware y el sistema operativo termina el programa con la señal `SIGFPE` (código de salida 136 en `bash`). La spec no define el comportamiento, y comprobarlo en cada división agregaría código a todas las operaciones. Queda documentado como comportamiento del ejecutable. |
 | 20 | Números reales | Siguen sin soportarse: un programa con `float` se rechaza al generar el código intermedio (decisión 12 de la etapa 4), antes de llegar a esta etapa. La cátedra pide primero los enteros. |
@@ -231,10 +231,10 @@ calcularon a mano, antes de correr nada. Los tests que arman un ejecutable neces
 con un aviso y no cuentan como fallas.
 
 **Unitario del generador (`tests/unit/test_x86gen.c`).** Arma programas con la API del código intermedio y compara el assembly
-generado con el escrito a mano, **una operación por vez**: `MOVE`, `ADD`, `SUB`, `MUL`, `NEG`, `NOT`, `LT`, `GT`, `EQ`, `DIV`, `MOD`,
+generado con el escrito a mano, **una operación por vez**: `MOVE`, `ADD`, `SUB`, `MUL`, `NEG`, `NOT`, `LT`, `GT`, `EQ`, `NE`, `DIV`, `MOD`,
 `JMP`, `JZ`, `JNZ`, etiquetas, `PARAM`, `CALL` y `RET`. También prueba el marco de pila (tamaños para 0 a 9 posiciones), los
 parámetros (los 6 de los registros y el 7.º y 8.º de la pila), las locales en 0, las llamadas con 0, 1, 6, 7, 8 y 9 argumentos (incluido
-el relleno de alineación), los nombres de símbolos y la estructura del archivo. Son 76 comprobaciones. Las explicaciones de cada función
+el relleno de alineación), los nombres de símbolos y la estructura del archivo. Son 77 comprobaciones. Las explicaciones de cada función
 están en `guia-del-codigo.md`, sección 18.
 
 **Assembly de programas completos (`tests/assembly/`, el `.expected` es el `.ass`):**

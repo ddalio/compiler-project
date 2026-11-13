@@ -26,27 +26,13 @@ entendiera de otro modo, solo habría que cambiar el chequeo correspondiente.
 
 | # | Tema | Decisión |
 |---|------|----------|
-| 7 | Target | Se agrega **`-target sem`** y pasa a ser el **target por defecto** (la etapa actual). La tabla de targets de la cátedra (`scan`, `parse`, `codinter`, `assembly`) no tiene uno para el análisis semántico, aunque sí define la extensión `.sem`; esto es una **extensión** que conviene confirmar con la cátedra. `scan` y `parse` siguen funcionando igual; `codinter` y `assembly` se siguen rechazando con "not available yet". |
+| 7 | Target | Se agrega **`-target sem`** y pasa a ser el **target por defecto** (la etapa actual). La tabla de targets de la cátedra (`scan`, `parse`, `codinter`, `assembly`) no tiene uno para el análisis semántico, aunque sí define la extensión `.sem`. `scan` y `parse` siguen funcionando igual; `codinter` y `assembly` se siguen rechazando con "not available yet". |
 | 8 | Archivo `.sem` | Es la salida de la etapa. Contiene el **AST anotado**: un nodo por línea, 2 espacios de sangría por nivel; las expresiones muestran su tipo y los identificadores muestran su tipo y la clase de símbolo (variable, parámetro o método) a la que resolvieron. El formato exacto se fija al implementar la impresión del AST (sección 2 del checklist) y lo verifican los tests. Se genera solo si no hubo ningún error (léxico, sintáctico ni semántico); por defecto es `<fuente>.sem` junto al fuente y `-o` lo reemplaza. |
 | 9 | `-debug` | Con `-debug` el AST anotado sale también por `stdout`, y la traza de la tabla de símbolos (abrir y cerrar nivel, insertar) por `stderr`. Sin `-debug`, una compilación exitosa no imprime nada. |
 | 10 | Cuándo corre | El análisis semántico corre **solo si el parseo terminó bien y no hubo errores léxicos**. Un error léxico significa que el programa ya es inválido y los símbolos descartados podrían producir errores semánticos engañosos. |
 | 11 | Mensajes de error | Por `stderr`, uno por línea, en el mismo estilo que las etapas anteriores: `archivo:línea:columna: semantic error: mensaje`. Mensajes en inglés, con los identificadores entre comillas simples y los tipos como `int`, `float`, `boolean` y `void` (por ejemplo, `'x' undeclared`). Código de salida `1` (error en el programa fuente), igual que los errores léxicos y sintácticos. |
 | 12 | Cantidad de errores | Se **informan todos** los errores semánticos de una corrida, en el orden del fuente. A diferencia del parser (que se detiene en el primero porque, tras un error de sintaxis, el estado queda desincronizado), el recorrido semántico siempre puede continuar. Para no generar errores en cascada, una expresión con error recibe un tipo especial `error` que es compatible con todo y no produce errores nuevos en las expresiones que la contienen. |
 | 13 | Posiciones | Cada nodo del árbol de parsing y del AST guarda línea y columna. Las hojas toman la posición del token (la fija el scanner) y los nodos internos la posición de su primer símbolo, usando `%locations` de bison. Un error se informa en la posición de su construcción principal: el operador, en las operaciones; el identificador en las asignaciones y llamadas; la palabra `return`, `if` o `while` en esas sentencias. |
-
-### Reglas de la spec
-
-| # | Tema | Decisión |
-|---|------|----------|
-| 14 | Coerciones entre `int` y `float` **(interpretación)** | Las reglas 4, 7, 11 y 13 piden "el mismo tipo", pero la regla 14 dice que "se permiten coerciones o truncamientos entre `int` y `float`". Se interpreta que la regla 14 **relaja** a las demás: donde se pide el mismo tipo, `int` y `float` son compatibles entre sí (asignación, `return`, argumentos de una llamada, comparación con `==`). `boolean` no es compatible con ningún otro tipo. Operaciones aritméticas con un `int` y un `float` dan `float`; con dos del mismo tipo, ese tipo. Las comparaciones (`< > ==`) y los operadores lógicos dan `boolean`. |
-| 15 | Operador `%` | Se aplica la regla 10 tal cual: sus operandos pueden ser `int` o `float`. La prosa de la spec dice que `%` es el resto entre enteros, pero no lo lista entre las reglas semánticas, así que no se agrega una restricción que la spec no exige. |
-| 16 | `main` | Se exige un **método** llamado `main` **sin parámetros** (regla 3). No se restringe su tipo de retorno. Un `main` declarado como variable es un error. |
-| 17 | Método con tipo sin `return` | La spec dice que un método que devuelve un valor "no puede alcanzar el fin del método". Se **verifica** con un análisis conservador: una sentencia garantiza `return` si es un `return`, un bloque con alguna sentencia que lo garantiza, o un `if/else` cuyas dos ramas lo garantizan. Un `while` no lo garantiza, salvo que su condición sea el literal `true`. Si el cuerpo no lo garantiza, es un error. Los métodos `void` pueden terminar sin `return`. |
-| 18 | Clase del símbolo | Se verifica que cada uso corresponda a la clase correcta: solo las variables y parámetros pueden usarse como valor o ubicación (regla 8), y solo los métodos pueden invocarse. Usar un método como variable o invocar una variable son errores. |
-| 19 | Métodos `void` | Pueden invocarse como sentencia y no como parte de una expresión (regla 5). Un método con tipo puede invocarse como sentencia: el resultado se ignora. |
-| 20 | Declaración múltiple | `int x, x;` es una redeclaración (regla 1), porque ambos identificadores quedan en el mismo nivel. |
-| 21 | Etapa 2 | El árbol de parsing y el `.sint` **no cambian**. Solo se agregan posiciones a los nodos, que el `.sint` no imprime, por lo que sus tests siguen valiendo tal cual. |
-| 22 | Programa de ejemplo de la spec | El programa de ejemplo de `01-TDS-spec-lenguaje` es **sintácticamente** válido pero **no semánticamente**: su `main` es `void` y ejecuta `return 1;` y `return inc(y);`, lo que viola la regla 6 (en un método `void`, `return` no puede llevar expresión). El compilador informa esos dos errores. Se respeta la regla y no se la relaja para que el ejemplo pase; en los tests semánticos el ejemplo se usa como caso inválido y se agrega una versión corregida como caso válido. |
 
 ## 2. Diseño y decisiones clave
 
@@ -57,12 +43,7 @@ Para no tocar la gramática se agregó lo siguiente (la decisión 13 de la secci
 
 - `Node` (`tree.h`) tiene los campos `line` y `col`, y la función `node_at` para fijarlos.
 - El scanner completa `yylloc` en cada token (macro `SET_YYLLOC`) y la macro `LEAF` fija la posición de cada hoja.
-- `bison.y` declara `%locations`. En las acciones, los nodos internos toman la posición del primer símbolo de la
-  regla (`@$`, mediante la macro `AT`); un `param` toma la de su tipo (`AT_NODE`), porque en una lista el primer
-  símbolo de la regla es la lista completa y no el parámetro.
-- El `.sint` **no imprime posiciones**, así que no cambió: los 62 tests de las etapas 1 y 2 siguen pasando sin
-  modificaciones.
-
+  
 ### AST (`ast.h`, `ast.c`)
 
 Sigue la teoría de `05-TDS-AST`: un nodo con tipo de nodo, referencia a la tabla de símbolos, información extra
@@ -106,12 +87,6 @@ Decisiones de este diseño:
   árbol; si no coincide (un error del compilador y no del programa) `ast_from_tree` informa un error interno y
   termina con código 2.
 
-### Verificación
-
-La construcción del AST se probó con un programa de prueba temporal (que no se versiona), con un programa que usa
-variables globales, parámetros, `if/else`, `while`, llamadas, `-` unario, bloques y sentencia vacía: el AST impreso
-y las posiciones de cada nodo (línea y columna) se compararon a mano con el fuente, y la ejecución con
-AddressSanitizer y UBSan no mostró errores de memoria, incluso liberando el árbol de parsing antes de usar el AST.
 
 ### Tabla de símbolos (`symtab.h`, `symtab.c`)
 
@@ -199,7 +174,7 @@ calcula de abajo hacia arriba: un literal tiene su tipo, un identificador el de 
 del método, y una operación lo deduce de sus operandos.
 
 La compatibilidad de tipos está en `types_compatible(esperado, actual)` y es la decisión 14: iguales, o `int` y `float`
-entre sí (en asignación, `return`, argumentos y `==`). `boolean` solo es compatible con `boolean`.
+entre sí (en asignación, `return`, argumentos, `==` y `!=`). `boolean` solo es compatible con `boolean`.
 
 | Regla | Qué verifica | Mensaje (posición) |
 |-------|--------------|--------------------|
@@ -210,7 +185,7 @@ entre sí (en asignación, `return`, argumentos y `==`). `boolean` solo es compa
 | 7 | Tipo del valor de `return` | `cannot return boolean from method 'h' of type int` (el `return`) |
 | 9 | Condición de `if` / `while` | `condition of 'if' must be boolean, got int` (la sentencia) |
 | 10 | Operandos de `+ - * / % < >` y de `-` unario | `operands of '+' must be int or float, got boolean and int`, `operand of '-' must be int or float, got boolean` (el operador) |
-| 11 | Operandos de `==` | `operands of '==' must have the same type, got int and boolean` (el operador) |
+| 11 | Operandos de `==` y `!=` | `operands of '==' must have the same type, got int and boolean` (el operador; con `!=` el mensaje nombra `'!='`) |
 | 12 | Operandos de `&&`, `\|\|` y `!` | `operands of '&&' must be boolean, got int and boolean`, `operand of '!' must be boolean, got int` (el operador) |
 | 13 | Asignación | `cannot assign boolean to 'x' of type int` (la ubicación) |
 | 14 | Coerciones `int` / `float` | No es un error: es lo que relaja a las reglas 4, 7, 11 y 13 |
@@ -222,7 +197,7 @@ Decisiones y detalles:
   operando ya tiene error, la operación no informa nada y su resultado también es `TYPE_ERROR`; por eso un identificador
   sin declarar se informa una sola vez aunque se use dentro de varias operaciones, condiciones o asignaciones.
 - **Resultado de las operaciones:** aritméticas, `float` si algún operando es `float` y `int` en otro caso (la división de
-  dos `int` es `int`); relacionales, `==`, `&&`, `||` y `!`, `boolean`; `-` unario, el tipo del operando.
+  dos `int` es `int`); relacionales, `==`, `!=`, `&&`, `||` y `!`, `boolean`; `-` unario, el tipo del operando.
 - **Un solo mensaje por operador**, con los tipos de los dos operandos, en la posición del operador (decisión 13).
 - **`return` sin valor en un método con tipo es un error**, porque la spec dice que esos métodos "únicamente retornan con
   una sentencia `return` (que debe tener asociado una expresión)".
@@ -231,13 +206,8 @@ Decisiones y detalles:
   condición es el literal `true`. Es conservador: un `while (x) { return 1; }` no se acepta como garantía. El error se
   informa en el nombre del método, porque el AST no guarda la posición de la llave de cierre, y después de los errores del
   cuerpo del método.
-- **El programa de ejemplo de la spec no pasa el análisis semántico** (decisión 22): `main` es `void` y retorna valores.
 
-Verificación: con un programa temporal (que no se versiona) se probaron 18 programas, uno o más por cada mensaje de la
-tabla, más los casos que **no** deben dar error (coerciones `int`/`float` en asignación y `return`, argumentos `float` donde
-se espera `int`, `while (true)` sin `return` posterior, `if/else` con `return` en ambas ramas). Los mensajes y posiciones
-coinciden con los calculados a mano. Se comprobó también que los tipos se propagan en el AST (`1 + 2.5` es `float`,
-`f < 3 && true` es `boolean`) y que no hay errores de memoria con AddressSanitizer y UBSan.
+
 
 ## 3. Detalles de implementación
 
@@ -254,9 +224,6 @@ El análisis semántico se conecta al resto del compilador en `run_sem`, que sig
    genera archivo y el código de salida es 1.
 6. **Liberación:** se liberan la tabla y el AST.
 
-Con `-debug`, el AST anotado sale por `stdout` y la traza de la tabla de símbolos por `stderr`
-(`[symtab] insert x (variable int) at level 2`). La traza del parser de bison solo se activa con `-target parse`, para no
-mezclar ruido de otra etapa. Sin `-debug`, una compilación exitosa no imprime nada.
 
 ### Cambios en las etapas anteriores
 
@@ -310,6 +277,7 @@ operadores, valores de literales e impresión; libera el árbol de parsing antes
 | `recursion` | Un método que se llama a sí mismo, parámetros, `return` tras un `if` y llamada como expresión. |
 | `coercions` | `int` ↔ `float` en asignación, `return` y argumentos; tipo de las operaciones mixtas. |
 | `logic_ops` | `&&`, `\|\|`, `!`, `==` entre `boolean`, relacionales y `while`. |
+| `not_equal` | `!=` entre `int`, entre `int` y `float` y entre `boolean`: el resultado es `boolean`. |
 | `return_paths` | Métodos con tipo que siempre retornan: `if/else` con `return` en ambas ramas, `while (true)`, bloque anidado; y un método `void` con `return;`. |
 | `spec_example_fixed` | El ejemplo de la spec con `main` corregido (`int main`), un `main` que no es `void`. |
 | `nested_scopes` | El mismo nombre en bloques distintos, en las dos ramas de un `if`, y un parámetro que oculta a un método. |
@@ -329,7 +297,7 @@ regla de la spec.
 | 8 y clases | `rule8_assign_to_method`, `rule8_assign_undeclared`, `class_method_as_value`, `class_call_variable`, `call_undeclared_args`, `param_shadows_method` |
 | 9 | `rule9_conditions` |
 | 10 | `rule10_arithmetic`, `rule10_relational`, `rule10_unary_minus` |
-| 11 | `rule11_equality` (incluye el caso `int == float`, que **no** es error) |
+| 11 | `rule11_equality` (incluye el caso `int == float`, que **no** es error), `not_equal_types` (`!=` con `int` y `boolean`) |
 | 12 | `rule12_logical` |
 | 13 y 14 | `rule13_assign_bool_to_int`, `rule13_assign_int_to_bool`, `rule14_boolean_not_numeric` |
 | `return` en todos los caminos | `missing_return_if`, `missing_return_while` |
@@ -344,11 +312,6 @@ mismo nombre en bloques distintos.
 **Línea de comandos (en el script):** el target por defecto genera `<fuente>.sem` y no `.sint` ni `.lex`; `-o` con
 `-target sem`; `-debug` muestra el AST por `stdout` y la traza de la tabla por `stderr`; `-target parse` no ejecuta el
 análisis semántico (un programa con error semántico igual genera su `.sint`).
-
-**Regresión y memoria:** los 62 casos de las etapas 1 y 2 siguen pasando. En total `make test` ejecuta 119 casos y
-`make test-asan` los mismos con AddressSanitizer y UBSan, sin errores de memoria. Se comprobó además que los tests
-detectan fallas: al cambiar a propósito una posición en un `.expected` de error y un tipo en un `.expected` válido,
-ambos casos fallaron.
 
 **Hallazgos del testing:** al escribir los casos válidos se vio que el ejemplo de la spec no es semánticamente correcto
 (ya registrado en la decisión 22); por eso se agregó su versión corregida. Los demás `.expected`, calculados a mano,

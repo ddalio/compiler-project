@@ -47,7 +47,7 @@ modifica en el lugar y devuelve si cambió algo.
 
 **`fold`: plegado de constantes y simplificaciones algebraicas.** Una operación entre dos constantes se reemplaza por su resultado,
 calculado con aritmética de 32 bits que da la vuelta. Además, `x + 0`, `x - 0`, `x * 1`, `x / 1` se reemplazan por `x`; `x * 0`, `x - x`,
-`x % 1` por 0; `x == x` por 1; y `x < x`, `x > x` por 0. Una división o un resto por cero no se pliega (decisión 6). Ejemplo:
+`x % 1` por 0; `x == x` por 1; y `x < x`, `x > x`, `x != x` por 0. Una división o un resto por cero no se pliega (decisión 6). Ejemplo:
 
 ```
 t1 = 3 * 4      →  t1 = 12
@@ -157,7 +157,7 @@ Hay dos clases de tests del optimizador, y las dos comparan con resultados **esc
 
 ### Tests unitarios
 
-**Análisis (`tests/unit/test_flow.c`, 70 comprobaciones).** Qué operandos lee y escribe cada instrucción (y que `instr_reads` devuelve punteros a los campos reales, para poder
+**Análisis (`tests/unit/test_flow.c`, 73 comprobaciones).** Qué operandos lee y escribe cada instrucción (y que `instr_reads` devuelve punteros a los campos reales, para poder
 reemplazarlos), las funciones auxiliares, y los bloques básicos y el grafo de flujo en cuatro formas típicas: código recto, un `if/else`, un `while` y código inalcanzable; más
 dos bordes: etiquetas consecutivas y un método que termina en una etiqueta.
 
@@ -183,7 +183,7 @@ eliminar las llamadas sin uso (1) y no dar la vuelta en `INT_MIN / -1` (1). Con 
 
 ### Tests de programas completos
 
-**Código optimizado esperado (`tests/optimizer/`, 13 casos).** Nueve programas chicos, cada uno pensado para mostrar una cosa, con el código que debe quedar escrito a mano
+**Código optimizado esperado (`tests/optimizer/`, 17 casos).** Once programas chicos, cada uno pensado para mostrar una cosa, con el código que debe quedar escrito a mano
 (`<caso>.expected`, con todas las optimizaciones). Algunos tienen además un `<caso>.<optimización>.expected` con lo que deja **solo esa** optimización, para ver qué hace cada
 una sin que las otras la tapen. El script corre `-target opt` (o `-opt <nombre> -target opt`), comprueba que no imprime nada y compara el `.opt` con lo esperado; después repite con
 `-debug` y comprueba que el mismo código sale por `stdout`.
@@ -198,6 +198,8 @@ una sin que las otras la tapen. El script corre `-target opt` (o `-opt <nombre> 
 | `globals_and_calls` | La global `g` vale 3 antes de la llamada y la llamada la cambia: se conserva la lectura `ret @g` y la llamada sin uso. |
 | `short_circuit_constants` | `true && false` y `r \|\| true` se reducen a una constante (`ret 1`). |
 | `constant_chain` | Una suma de 60 constantes (`1+2+...+60`) se pliega entera a `ret 1830` (= 60·61/2): el caso que mostró el defecto del tope de vueltas. |
+| `not_equal` | `3 != 4`, `x != y` (con `y` copia de `x`) y `4 != 4` se pliegan y propagan hasta dejar `ret 1`; con `fold` solo se pliegan las comparaciones entre constantes. |
+| `not_equal_same` | `a != a` se simplifica a 0 aunque `a` sea un parámetro desconocido (con `fold` solo, `t1 = 0`). |
 | `fully_constant` | Un programa donde todo es constante: se reduce a `@g = 14` y `ret 14`. |
 
 **Equivalencia (la prueba de que no cambia el comportamiento).** Los programas de `tests/codinter/programs/`, `native/` y `optimizer/` se compilan a ejecutable sin optimizar y con
@@ -244,7 +246,7 @@ constantes pasó de 60 vueltas a 2 y una suma de 5000 constantes de 3,6 s a 0,4 
 | `tests/native/` | 26 | 294 → 177 (39% menos) | 150 → 60 |
 | `tests/optimizer/` | 9 | 147 → 35 (76% menos) | 85 → 7 |
 
-**Resultado.** `make test` ejecuta **316 casos** y todos pasan; los del optimizador son 13 de código esperado, 62 de equivalencia y 26 de línea de comandos, más los programas unitarios `test_flow` y `test_opt`. `make test-asan` también, sin errores de memoria ni de comportamiento indefinido.
+**Resultado.** `make test` ejecuta **332 casos** y todos pasan; los del optimizador son 17 de código esperado, 66 de equivalencia y 26 de línea de comandos, más los programas unitarios `test_flow` y `test_opt`. `make test-asan` también, sin errores de memoria ni de comportamiento indefinido.
 
 ## 6. Problemas conocidos
 
@@ -258,7 +260,7 @@ Todo lo que sigue se probó con programas generados o escritos para esto; los ti
 - **No hay análisis de vida de variables.** Una escritura que otra escritura pisa se elimina solo si la variable nunca se lee en el método (`x = 1; x = 2; return x;` queda `ret 2`);
   si se lee en otro bloque, las dos escrituras se quedan (`x = 1; x = 2; if (...) {...} return x;`). Las declaraciones de variables locales sin uso se conservan.
 - **Sin reducción de fuerza ni subexpresiones comunes.** `a * 2` queda como multiplicación y `(a - b) + (a - b)` calcula `a - b` dos veces. Sí se simplifican `x + 0`, `x * 1`, `x * 0`,
-  `x - x`, `x / 1`, `x % 1`, `x == x` y `x < x`.
+  `x - x`, `x / 1`, `x % 1`, `x == x`, `x != x` y `x < x`.
 - **No se eliminan, mueven ni repiten llamadas**, aunque el método llamado no tenga efectos (decisión 6), y no se hace inlining. Una llamada cuyo resultado no se usa se queda sin el resultado.
 - **`temps` solo renumera.** Compacta los temporales que sobreviven pero no comparte la misma posición entre temporales que no se usan a la vez, así que el marco de pila sigue teniendo
   una posición por temporal que queda.

@@ -137,6 +137,7 @@ escritos a mano a partir de la gramática, no copiados de la salida del compilad
 | `calls` | Llamada como sentencia, con argumentos, y como parte de una expresión. |
 | `literals` | Literales entero, real, `true` y `false`. |
 | `precedence` | Precedencia y asociatividad: `a + b * c`, `a * b + c`, `a - b - c`, `-a * b`, `!a && b \|\| c`, `a \|\| b && c`, `a == b < c` y paréntesis. |
+| `not_equal` | El operador `!=` (extensión de la spec) con la precedencia de `==`: asociatividad en los dos órdenes (`a != b == c`, `a == b != c`) y combinado con `+`, `<`, `>`, `&&`, `!` y paréntesis. |
 | `spec_example` | Programa de ejemplo de la especificación. |
 | `comments_layout` | Comentarios, tabs y saltos de línea que no deben cambiar el árbol. |
 
@@ -151,6 +152,7 @@ escritos a mano a partir de la gramática, no copiados de la salida del compilad
 | `decl_after_statement` | Declaración de variable después de una sentencia en un bloque. |
 | `if_without_braces` | Cuerpo del `if` sin llaves. |
 | `incomplete_expr` | Expresión incompleta (`1 + ;`). |
+| `not_equal_missing_operand` | Falta el operando derecho de `!=` (`a != ;`). |
 | `param_without_name`, `trailing_comma_params` | Parámetros mal formados. |
 | `var_after_method` | Variable global después de un método. |
 | `call_missing_comma` | Argumentos sin coma. |
@@ -191,9 +193,6 @@ engañosos por las reducciones por defecto de bison. Se corrigió con `%define l
   decisión 3. Si más adelante se pidiera otro formato, solo habría que cambiar `print_node` en `tree.c`.
 - **El árbol no guarda los paréntesis ni la puntuación.** Es intencional (decisión de diseño), pero
   significa que no se puede reconstruir el texto original a partir del `.sint`.
-- **Heredados de la etapa 1:** `-2147483648` no se puede escribir como literal; los literales reales solo se
-  validan contra el rango de `double`; los caracteres no ASCII se informan byte por byte; los comentarios
-  de bloque no se anidan; el ejemplo de la spec trae una llave `}` de más.
 
 **Resuelto en esta etapa:** `123abc` se reconocía en la etapa 1 como `INT_LITERAL 123` seguido de `ID abc`
 sin avisar. Ahora el parser lo rechaza (`unexpected identifier`), que era lo previsto.

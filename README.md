@@ -4,6 +4,8 @@ Taller de Diseño de Software (Cod. 3306) - DC - FCEFQyN - UNRC - 2026
 
 **Estado:** Etapas 1 (léxico), 2 (sintáctico), 3 (semántico), 4 (código intermedio), 5 (código objeto, assembly x86-64 y ejecutable) y 6 (optimizador del código intermedio) terminadas.
 
+**Extensión:** además de lo que pide la spec, el lenguaje acepta el operador distinto `!=`, con la misma precedencia que `==` (los dos operandos deben tener el mismo tipo y el resultado es `boolean`).
+
 Documentación: [etapa 1](docs/etapa-1-lexico.md), [etapa 2](docs/etapa-2-sintactico.md), [etapa 3](docs/etapa-3-semantico.md), [etapa 4](docs/etapa-4-codigo-intermedio.md), [etapa 5](docs/etapa-5-codigo-objeto.md), [etapa 6](docs/etapa-6-optimizador.md). Para estudiar el código (qué hace cada archivo y cada función): [guía del código](docs/guia-del-codigo.md). Las decisiones que la spec no define y conviene confirmar con la cátedra están reunidas en [decisiones a confirmar](docs/decisiones-a-confirmar.md).
 
 ## Requisitos
@@ -86,7 +88,7 @@ make test-asan                     # los mismos tests con sanitizers (detecta er
 bash tests/run_tests.sh ./c-tds    # corre los tests con un ejecutable ya compilado
 ```
 
-`make test` ejecuta **316 casos** y todos pasan. Con `bash tests/run_tests.sh ./c-tds` son 310: no corre los 6 programas de tests unitarios, que arma `make test`. Los tests del ejecutable (compilar y correr) necesitan Linux x86-64 y `gcc`; si faltan se omiten con un aviso.
+`make test` ejecuta **332 casos** y todos pasan. Con `bash tests/run_tests.sh ./c-tds` son 326: no corre los 6 programas de tests unitarios, que arma `make test`. Los tests del ejecutable (compilar y correr) necesitan Linux x86-64 y `gcc`; si faltan se omiten con un aviso.
 
 Casos de test (cada `.ctds` tiene un `.expected` con la salida esperada):
 

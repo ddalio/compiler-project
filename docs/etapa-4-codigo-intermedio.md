@@ -35,7 +35,7 @@ Instrucciones y su texto en el archivo `.ci`:
 | Copia | `x = a` | `x` toma el valor de `a` (variable, temporal o constante) |
 | Aritmética | `t = a + b`, `-`, `*`, `/`, `%` | operación entera; la división y el resto se truncan hacia cero, como en C |
 | Negación aritmética | `t = - a` | `t = -a` |
-| Comparación | `t = a < b`, `>`, `==` | `t` vale 1 si se cumple y 0 si no |
+| Comparación | `t = a < b`, `>`, `==`, `!=` | `t` vale 1 si se cumple y 0 si no |
 | Negación lógica | `t = ! a` | `t` vale 1 si `a` es 0, y 0 en otro caso |
 | Etiqueta | `L1:` | marca un punto del código |
 | Salto | `jmp L1` | salto incondicional |
@@ -264,6 +264,7 @@ todas las instrucciones**. La explicación de cada función está en `guia-del-c
 | `globals` | Declaración de globales (`global @g`) y su asignación; `true` como constante 1. |
 | `arithmetic` | Precedencia y asociatividad de `+ - * / %`, el `-` unario y los paréntesis. |
 | `comparisons_logic` | `< > ==`, `!` y `\|\|` con cortocircuito. |
+| `not_equal` | `!=` como una sola instrucción (`t1 = x != 5`), dentro de `!(...)` y de un `&&`. |
 | `if_else` | `if` con y sin `else`: etiquetas y saltos, con una variable `boolean` como condición. |
 | `while_nested` | Dos `while` anidados y la numeración de sus etiquetas. |
 | `calls_nested_args` | Argumentos que son llamadas (`f(g(1), 2)`) y `param` consecutivos. |
