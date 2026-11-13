@@ -19,7 +19,7 @@ más de 6 argumentos, la división con negativos, el resultado de `INT_MIN / -1`
 | 1 | Plataforma y sintaxis | El assembly es **x86-64 de Linux en sintaxis AT&T**, la que acepta el ensamblador de GNU y la que usa el tutorial (`mov origen, destino`, registros con `%`, inmediatos con `$`). El archivo de salida tiene la extensión `.ass`, que define la cátedra para esta etapa. |
 | 2 | Cómo se obtiene el ejecutable | Se invoca **`gcc -x assembler - -o <ejecutable>`** y el assembly se le pasa **por su entrada estándar** (una tubería), sin archivos temporales. `gcc` ensambla y enlaza con la biblioteca de C, cuyo código de arranque es el que llama a `main`. Se lanza con `fork` y `execvp` pasando los argumentos como arreglo, **sin intérprete de comandos**, así ningún nombre de archivo necesita comillas. `-x assembler` es necesario porque `gcc` no reconoce la extensión `.ass` (sin él la trata como un script del enlazador). Si `gcc` no se puede ejecutar, o falla, el compilador informa el motivo por `stderr` y termina con código 2 (error de herramientas, no del programa fuente). |
 | 3 | Qué hace el compilador **sin `-target`** | La cátedra dice que el comportamiento por defecto es realizar la compilación completa y generar el ejecutable `nombreArchivo.out`, y que `-target` detiene la compilación en una etapa. Por eso, **sin `-target`, el compilador genera el ejecutable** (`<fuente>.out`, o el archivo de `-o`): corre todo el front end, genera el código intermedio, el assembly y lo ensambla y enlaza. El assembly no se guarda. `-target assembly` se detiene antes y escribe el **`.ass`** (en el archivo de `-o`, si se lo da). Los demás targets (`scan`, `parse`, `sem`, `codinter`) siguen funcionando igual. Hasta la etapa 4 el target por defecto era `codinter`; esto lo cambia (los tests que lo usaban pasan a indicar `-target codinter`). |
-| 4 | `-o`, `-debug` y `-run` | `-o` nombra el **ejecutable** (como dice la cátedra: "renombra el archivo ejecutable") o, con `-target assembly`, el `.ass`. Con `-debug` el assembly también sale por `stdout`. `-run` ejecuta el código intermedio con el intérprete: **implica `-target codinter`** (como sin `-target` ahora se genera el ejecutable, `c-tds -run programa.ctds` seguiría pidiendo el intérprete en vez de compilar) y sigue sin poder combinarse con otro target. |
+| 4 | `-o` y `-debug` | `-o` nombra el **ejecutable** (como dice la cátedra: "renombra el archivo ejecutable") o, con `-target assembly`, el `.ass`. Con `-debug` el assembly también sale por `stdout`. |
 | 5 | Errores | Un programa con errores léxicos, sintácticos, semánticos o de generación (por ejemplo, un `float`) no genera ni `.ass` ni ejecutable, y termina con código 1. Un programa correcto genera siempre assembly válido: si `gcc` lo rechazara, es un error del compilador y se informa como error de herramientas (código 2). |
 | 23 | `-o` y el archivo fuente | Si `-o` apunta al **propio archivo fuente** (con el mismo nombre o con otro nombre del mismo archivo, por ejemplo un enlace simbólico), el compilador lo rechaza (`output file '...' would overwrite the input file`, código 2) antes de hacer nada. Con `-o` el ejecutable o el archivo de la etapa se escribe donde se indique, y sin esta comprobación `c-tds -o programa.ctds programa.ctds` reemplazaba el fuente por el ejecutable. Se detectó al preparar los problemas conocidos de esta etapa y afectaba a todos los targets. |
 
@@ -27,10 +27,10 @@ más de 6 argumentos, la división con negativos, el resultado de `INT_MIN / -1`
 
 | # | Tema | Decisión |
 |---|------|----------|
-| 6 | Enteros de 32 bits | Se usan **instrucciones de 32 bits** (`movl`, `addl`, `subl`, `imull`, `negl`, `cmpl`, `idivl` y los registros `%r10d`, `%r11d`, `%eax`), no las de 64 bits del tutorial. Así un `int` es de 32 bits con signo como pide la spec y el desborde **da la vuelta** igual que en el intérprete (decisión 21 de la etapa 4): `2147483647 + 1` vale `-2147483648`. Las constantes del código intermedio caben siempre en 32 bits. |
+| 6 | Enteros de 32 bits | Se usan **instrucciones de 32 bits** (`movl`, `addl`, `subl`, `imull`, `negl`, `cmpl`, `idivl` y los registros `%r10d`, `%r11d`, `%eax`), no las de 64 bits del tutorial. Así un `int` es de 32 bits con signo como pide la spec y el desborde **da la vuelta** (decisión 19 de la etapa 4): `2147483647 + 1` vale `-2147483648`. Las constantes del código intermedio caben siempre en 32 bits. |
 | 7 | Sin asignación de registros | Como en el tutorial, **cada parámetro, variable local y temporal vive en una posición del marco de pila** y cada operación carga sus operandos en los registros temporales **`%r10`** y **`%r11`**, opera y guarda el resultado en la pila. Se usan además `%rax` y `%rdx` (división y valor devuelto) y los registros de argumentos. No se usan los registros que el llamado debe preservar (`%rbx`, `%r12`–`%r15`), por lo que no hay que guardarlos. El código resulta lento a propósito: la cátedra pide concentrarse en la corrección. |
-| 8 | Marco de pila | Cada método tiene un marco con **una posición de 8 bytes** por parámetro, local y temporal (se usan los 4 bytes de abajo; es lo más simple y deja todo alineado). La posición `k` (empezando en 0) está en **`-8*(k+1)(%rbp)`**. El orden es el mismo del intérprete: primero los parámetros, después las locales y al final los temporales (`t1` primero). El prólogo es `pushq %rbp`, `movq %rsp, %rbp` y `subq $N, %rsp`, y el epílogo `leave` y `ret` (equivalente a `enter`, pero más legible). `N` es `8 * (nparams + nlocals + ntemps)` **redondeado hacia arriba a un múltiplo de 16**: como al entrar al método `%rsp` vale 8 módulo 16 (la dirección de retorno) y `pushq %rbp` lo deja en 0, con `N` múltiplo de 16 la pila queda alineada a 16 bytes. |
-| 9 | Variables locales | **Se inicializan en 0 en el prólogo** (`movl $0, ...`). La spec no define su valor; así el código nativo se comporta igual que el intérprete y no depende de la basura que haya en la pila. Los temporales no hace falta inicializarlos. |
+| 8 | Marco de pila | Cada método tiene un marco con **una posición de 8 bytes** por parámetro, local y temporal (se usan los 4 bytes de abajo; es lo más simple y deja todo alineado). La posición `k` (empezando en 0) está en **`-8*(k+1)(%rbp)`**. El orden es: primero los parámetros, después las locales y al final los temporales (`t1` primero). El prólogo es `pushq %rbp`, `movq %rsp, %rbp` y `subq $N, %rsp`, y el epílogo `leave` y `ret` (equivalente a `enter`, pero más legible). `N` es `8 * (nparams + nlocals + ntemps)` **redondeado hacia arriba a un múltiplo de 16**: como al entrar al método `%rsp` vale 8 módulo 16 (la dirección de retorno) y `pushq %rbp` lo deja en 0, con `N` múltiplo de 16 la pila queda alineada a 16 bytes. |
+| 9 | Variables locales | **Se inicializan en 0 en el prólogo** (`movl $0, ...`). La spec no define su valor; así el programa es determinista y no depende de la basura que haya en la pila. Los temporales no hace falta inicializarlos. |
 | 10 | Variables globales | Van en la sección de datos (`.data`) como `ctds_<nombre>: .long 0`, o sea **inicializadas en 0**, y se acceden con direccionamiento relativo a `%rip` (`ctds_g(%rip)`), que sirve también para ejecutables independientes de la posición. |
 | 11 | Nombres de símbolos | Todo método y toda global llevan el prefijo **`ctds_`** (`ctds_fact`, `ctds_g`), **salvo `main`**, que tiene que llamarse así porque lo llama la biblioteca de C. El prefijo evita choques con los símbolos de la biblioteca: un método llamado `printf`, `exit` o `puts` es válido en C-TDS y, sin prefijo, fallaría al enlazar o reemplazaría a la función de la biblioteca. `main` se declara `.globl`. |
 | 12 | Etiquetas | La etiqueta `L<n>` del código intermedio pasa a **`.L<n>`**: el prefijo `.L` hace que el ensamblador la trate como local (no aparece en la tabla de símbolos) y, como los números son únicos en todo el programa, no chocan entre métodos. Las etiquetas que necesita el propio generador para la división (decisión 18) se llaman `.Ldiv<n>` y `.Ldiv<n>e`, que no pueden confundirse con las anteriores (después de `.L` siguen letras y no solo dígitos). |
@@ -49,8 +49,8 @@ más de 6 argumentos, la división con negativos, el resultado de `INT_MIN / -1`
 | # | Tema | Decisión |
 |---|------|----------|
 | 17 | Comparaciones y booleanos **(interpretación)** | `t = a < b` se traduce con `cmpl` y una instrucción **`set*`** (`setl`, `setg`, `sete`) seguida de `movzbl`, que deja 0 o 1 en el registro. El tutorial usa `cmov*` con dos registros cargados con 0 y 1; `set*` hace lo mismo con menos instrucciones. `t = ! a` es `cmpl $0` y `sete`. Los saltos `jz` y `jnz` cargan el operando en `%r10d` (puede ser una constante, y `cmpl` no admite dos inmediatos), hacen `testl` y saltan con `je` o `jne`. |
-| 18 | División y resto | `a / b` y `a % b` cargan `a` en `%eax`, extienden el signo a `%edx` con `cltd`, cargan `b` en `%r10d` y usan `idivl`: el cociente queda en `%eax` y el resto en `%edx`, truncados hacia cero como en C y como en el intérprete. Para que el código nativo coincida con el intérprete, antes de dividir se **compara el divisor con -1**: si lo es, el cociente es `-a` (`negl`) y el resto 0, sin ejecutar `idivl`, porque en x86 `INT_MIN / -1` provoca una excepción de hardware aunque en la aritmética de 32 bits que da la vuelta su resultado es `INT_MIN` (se comprobó a mano). |
-| 19 | División por cero | **No se intercepta**: `idivl` con divisor 0 es una excepción de hardware y el sistema operativo termina el programa con la señal `SIGFPE` (código de salida 136 en `bash`). La spec no define el comportamiento, y comprobarlo en cada división agregaría código a todas las operaciones. Es una **diferencia con el intérprete** (que informa `runtime error: division by zero` y sale con código 1), y queda documentada. |
+| 18 | División y resto | `a / b` y `a % b` cargan `a` en `%eax`, extienden el signo a `%edx` con `cltd`, cargan `b` en `%r10d` y usan `idivl`: el cociente queda en `%eax` y el resto en `%edx`, truncados hacia cero como en C. Para que el resultado sea el de la aritmética de 32 bits que da la vuelta (decisión 19 de la etapa 4), antes de dividir se **compara el divisor con -1**: si lo es, el cociente es `-a` (`negl`) y el resto 0, sin ejecutar `idivl`, porque en x86 `INT_MIN / -1` provoca una excepción de hardware aunque en la aritmética de 32 bits que da la vuelta su resultado es `INT_MIN` (se comprobó a mano). |
+| 19 | División por cero | **No se intercepta**: `idivl` con divisor 0 es una excepción de hardware y el sistema operativo termina el programa con la señal `SIGFPE` (código de salida 136 en `bash`). La spec no define el comportamiento, y comprobarlo en cada división agregaría código a todas las operaciones. Queda documentado como comportamiento del ejecutable. |
 | 20 | Números reales | Siguen sin soportarse: un programa con `float` se rechaza al generar el código intermedio (decisión 12 de la etapa 4), antes de llegar a esta etapa. La cátedra pide primero los enteros. |
 
 ### Formato del `.ass` y testing
@@ -58,7 +58,7 @@ más de 6 argumentos, la división con negativos, el resultado de `INT_MIN / -1`
 | # | Tema | Decisión |
 |---|------|----------|
 | 21 | Contenido del `.ass` | Un comentario con el nombre del fuente, la sección `.data` con las globales, la sección `.text` con los métodos en el orden del fuente, y al final **`.section .note.GNU-stack,"",@progbits`**, que le dice al enlazador que el programa no necesita una pila ejecutable (sin ella, `ld` emite una advertencia en cada compilación, como se comprobó). Cada instrucción del código intermedio va precedida de un **comentario con su texto** (`# t1 = a + b`) y cada método lleva un comentario con su encabezado: el assembly queda legible y se puede relacionar línea a línea con el `.ci`. |
-| 22 | Testing de extremo a extremo | Como el único resultado observable de un ejecutable es su código de salida, los programas de `tests/codinter/run/` (que el intérprete ya verifica) **se compilan, se ejecutan y su código de salida se compara con el valor que devuelve el intérprete, módulo 256**. Así el intérprete es el oráculo del código nativo. Esos tests requieren Linux x86-64 y `gcc`; si no están, se **saltean** con un aviso (no fallan). La división por cero se prueba aparte: debe terminar con código 136. |
+| 22 | Testing de extremo a extremo | Como el único resultado observable de un ejecutable es su código de salida, los programas de `tests/codinter/programs/` (cada `.expected` trae, calculado a mano, el valor que devuelve `main`) **se compilan, se ejecutan y su código de salida se compara con ese valor, módulo 256**. Esos tests requieren Linux x86-64 y `gcc`; si no están, se **saltean** con un aviso (no fallan). La división por cero se prueba aparte: debe terminar con código 136. |
 
 Ejemplo del formato y de las decisiones 6 a 16. El programa:
 
@@ -153,8 +153,8 @@ x86-64, sin mirar las vecinas. Eso hace al generador simple y fácil de verifica
 - **`param` no genera código**: el generador guarda los argumentos pendientes (`pending`) y en el `call` los carga en los registros
   o los apila. Como entre los `param` y su `call` no hay otras instrucciones, cargar los argumentos recién en el `call` es equivalente a hacerlo
   en cada `param`.
-- **Las posiciones del marco se calculan con `ir_slot`**, la misma función que usa el intérprete. Así el assembly y el intérprete
-  ubican de la misma forma parámetros, locales y temporales (se movió `slot_of` del intérprete a `ir.c`).
+- **Las posiciones del marco se calculan con `ir_slot`** (en `ir.c`), que da la posición de cada parámetro, local y temporal
+  dentro del marco del método.
 - **Cada método termina con un retorno.** Si su código no termina en un `ret` (por ejemplo, un método con tipo que termina en una
   etiqueta, como `spec_example_fixed`), el generador agrega un `leave` y `ret` final; sin él, la ejecución caería en el código del
   método siguiente. Para `main` ese retorno devuelve 0.
@@ -169,8 +169,8 @@ x86-64, sin mirar las vecinas. Eso hace al generador simple y fácil de verifica
 ### Verificación del generador
 
 Se probó con un programa temporal (que no se versiona) que compila a assembly, lo ensambla con `gcc`, ejecuta el resultado y
-compara su código de salida. Con los **26 programas** de `tests/codinter/run/` el código de salida coincide con el valor que
-devuelve el intérprete (módulo 256), y el ensamblado no emite ninguna advertencia. Además se probaron casos propios de esta etapa:
+compara su código de salida. Con los **26 programas** de `tests/codinter/programs/` el código de salida coincide con el valor que
+devuelve `main` según su `.expected` (módulo 256), y el ensamblado no emite ninguna advertencia. Además se probaron casos propios de esta etapa:
 funciones de 7, 8 y 9 argumentos (por pila, con y sin relleno), una llamada de 7 argumentos como argumento de otra, una recursión con
 9 argumentos, un método llamado `printf` y otro `exit` y globales llamadas `puts` y `malloc` (el prefijo `ctds_` evita el choque
 con la biblioteca de C), la división y el resto por cero (el ejecutable termina con `SIGFPE`, código 136, como se documentó en la
@@ -202,7 +202,6 @@ AddressSanitizer y UBSan. Los tests permanentes se agregan en la sección de tes
   - el estado de `gcc` se espera con `waitpid`: si el hijo terminó con 127 (no se pudo ejecutar `gcc`) se informa
     `cannot run 'gcc': is it installed? ...` con la sugerencia de usar `-target assembly`; si terminó con otro estado distinto de 0
     se informa `gcc failed to assemble and link the program`. En ambos casos el código de salida es 2 (error de herramientas).
-- **`-run` sin `-target`** se interpreta como `-target codinter` (decisión 4); con otro target explícito sigue siendo un error de uso.
 - **Errores**: igual que en las etapas anteriores, si el programa tiene errores léxicos, sintácticos, semánticos o de generación
   (un `float`), no se genera nada y el código de salida es 1.
 
@@ -210,8 +209,7 @@ AddressSanitizer y UBSan. Los tests permanentes se agregan en la sección de tes
 
 - **El target por defecto** dejó de ser `codinter`: sin `-target` se genera el ejecutable. Los tests que verificaban el `.ci` por
   defecto ahora pasan `-target codinter`. El test que comprobaba que `-target assembly` se rechazaba ("not available yet") se
-  reemplazó por tests de que lo genera. Los 183 casos anteriores siguen pasando (con esos cambios).
-- **`-run`** ahora implica `-target codinter` (los tests de `-run` no cambiaron).
+  reemplazó por tests de que lo genera. Los casos anteriores siguen pasando (con esos cambios).
 - Se agregaron `x86gen.o` al Makefile (sección 3 de esta etapa) y las llamadas al sistema `fork`, `pipe`, `execlp`, `waitpid` y
   `signal` a `main.c`; el programa sigue sin necesitar nada fuera de POSIX y de `gcc` para el ejecutable.
 
@@ -220,14 +218,13 @@ AddressSanitizer y UBSan. Los tests permanentes se agregan en la sección de tes
 Se probó el compilador completo con un programa que calcula el factorial de 5: sin `-target` genera `p.out` (y no deja ningún
 archivo intermedio) y el ejecutable termina con código 120; con `-o` lo nombra; con `-target assembly -o salida.s` escribe el
 assembly, que ensamblado aparte con `gcc -x assembler` da el mismo ejecutable (código 120); con `-debug` imprime el assembly por
-`stdout` y además arma el ejecutable; `-run` sin `-target` interpreta el código y escribe `120`; `-run -target assembly` se rechaza
-con código 2; un error semántico y un programa con `float` no generan ejecutable (código 1); con `PATH` vacío (sin `gcc`)
+`stdout` y además arma el ejecutable; un error semántico y un programa con `float` no generan ejecutable (código 1); con `PATH` vacío (sin `gcc`)
 informa `cannot run 'gcc'` con código 2. Con AddressSanitizer y UBSan no hay errores de memoria sobre los programas de prueba de
 las etapas 1 a 4 por el camino del ejecutable y por el del assembly. Los tests permanentes se agregan en la sección de testing.
 
 ## 4. Testing
 
-Los casos están en `tests/assembly/`, `tests/native/` y `tests/unit/` (y se reutilizan los de `tests/codinter/run/`), y los
+Los casos están en `tests/assembly/`, `tests/native/` y `tests/unit/` (y se reutilizan los de `tests/codinter/programs/`), y los
 ejecuta `tests/run_tests.sh` (`make test`). Los `.expected` están escritos a mano: el assembly se derivó aplicando las decisiones de
 la sección 2 (incluidos el marco de pila, el relleno de alineación y las posiciones de cada valor) y los códigos de salida se
 calcularon a mano, antes de correr nada. Los tests que arman un ejecutable necesitan **Linux x86-64 y `gcc`**; si no están, se omiten
@@ -238,7 +235,7 @@ generado con el escrito a mano, **una operación por vez**: `MOVE`, `ADD`, `SUB`
 `JMP`, `JZ`, `JNZ`, etiquetas, `PARAM`, `CALL` y `RET`. También prueba el marco de pila (tamaños para 0 a 9 posiciones), los
 parámetros (los 6 de los registros y el 7.º y 8.º de la pila), las locales en 0, las llamadas con 0, 1, 6, 7, 8 y 9 argumentos (incluido
 el relleno de alineación), los nombres de símbolos y la estructura del archivo. Son 76 comprobaciones. Las explicaciones de cada función
-están en `guia-del-codigo.md`, sección 19.
+están en `guia-del-codigo.md`, sección 18.
 
 **Assembly de programas completos (`tests/assembly/`, el `.expected` es el `.ass`):**
 
@@ -250,8 +247,8 @@ están en `guia-del-codigo.md`, sección 19.
 
 **Ejecutables (extremo a extremo):**
 
-- **Los 26 programas de `tests/codinter/run/`** se compilan a ejecutable y se ejecutan. Su código de salida debe ser el valor que da el
-  intérprete **módulo 256**: el intérprete es el oráculo del código nativo. Es el test más importante de la etapa: verifica que el
+- **Los 26 programas de `tests/codinter/programs/`** se compilan a ejecutable y se ejecutan. Su código de salida debe ser el valor que
+  devuelve `main` según el `.expected` (calculado a mano) **módulo 256**. Es el test más importante de la etapa: verifica que el
   assembly hace lo mismo que el código intermedio (factorial, Fibonacci, Ackermann, Collatz, cortocircuito, orden de evaluación,
   aritmética que da la vuelta, recursión de 50000 niveles, etc.).
 - **26 programas propios (`tests/native/`)** con el código de salida esperado calculado a mano: funciones de 7, 8 y 9 argumentos y
@@ -273,7 +270,7 @@ error y sale con código 2. Además, `-target assembly` funciona sin `gcc`.
 **Línea de comandos:** `-target assembly` genera el `.ass` y no el ejecutable; `-o` con `-target assembly`; sin `-target` se genera el
 ejecutable (y ningún archivo intermedio) y termina con el código esperado.
 
-**Regresión y memoria:** los 183 casos de las etapas 1 a 4 siguen pasando. En total `make test` ejecuta 247 casos (el último es el de `-o` sobre el propio fuente) y `make test-asan` los
+**Regresión y memoria:** los casos de las etapas 1 a 4 siguen pasando y `make test-asan` corre los
 mismos con AddressSanitizer y UBSan, sin errores de memoria. Se comprobó además que los tests detectan fallas: al cambiar a propósito la
 instrucción de la multiplicación por una suma en el generador, y un código de salida y una etiqueta en dos `.expected`, fallaron el unitario,
 el caso `loop`, y los programas nativos que multiplican; al restaurar todo volvieron a pasar.
@@ -291,13 +288,10 @@ en una llamada de 6 argumentos, pero el prólogo tiene `pushq %rbp`), corregido 
   propios mensajes salen por `stderr` tal cual), y un nombre de salida que `gcc` no pueda escribir produce ese mismo error.
 - **El único resultado observable es de 8 bits.** El sistema operativo conserva solo el byte bajo del valor que devuelve `main`: un
   resultado de 1000 sale como 232. Por eso los tests comparan módulo 256 y no se puede distinguir, por ejemplo, 5 de 261.
-- **División por cero.** El ejecutable termina con `SIGFPE` (código de salida 136) en vez de informar un error como el intérprete
-  (decisión 19). Es la única diferencia de comportamiento con el intérprete en programas sin recursión profunda.
+- **División por cero.** El ejecutable termina con `SIGFPE` (código de salida 136) en vez de informar un error (decisión 19).
 - **Recursión profunda.** El ejecutable usa la pila del sistema (8 MB por defecto) y el código sin optimizar gasta mucha: cada llamada
   ocupa su marco completo más 16 bytes. Con un método recursivo de 5 posiciones por marco (64 bytes por nivel), 100000 niveles
-  funcionan y 150000 terminan con `SIGSEGV` (código 139). El intérprete tiene su propio límite de 100000 llamadas (error limpio), así que
-  un programa con una recursión de entre 100000 y unos 130000 niveles se comporta distinto: el intérprete informa un error y el
-  ejecutable funciona. Se midió con programas generados.
+  funcionan y 150000 terminan con `SIGSEGV` (código 139). Se midió con programas generados.
 - **El código no está optimizado** (a propósito: la cátedra pide corrección y la optimización es la etapa siguiente). Todos los valores
   van a memoria y **cada temporal tiene su propia posición**: un método de 3000 asignaciones `x = x + 1` genera un marco de 3001
   posiciones (24016 bytes) y 21017 líneas de assembly (unos 600 KB). Cada división incluye la comprobación del divisor -1 y cada
@@ -308,7 +302,7 @@ en una llamada de 6 argumentos, pero el prólogo tiene `pushq %rbp`), corregido 
 - **Expresiones larguísimas.** El compilador recorre las expresiones con recursión; una suma `a + a + ... + a` de 20000 términos se compila
   bien y con 30000 el compilador se cae por desborde de su pila (código 139), igual que el límite de la etapa 4. No ocurre con programas
   reales.
-- **Las variables locales valen 0 al empezar** (decisión 9). Es lo que hace el intérprete y es determinista, pero un programa equivalente
+- **Las variables locales valen 0 al empezar** (decisión 9). Es determinista, pero un programa equivalente
   en C tendría valores indefinidos; los resultados no son comparables con los de un compilador de C para programas que lean locales sin
   asignar.
 - **Los números reales no están soportados** (decisión 20): un programa con `float` se rechaza al generar el código intermedio.
@@ -316,5 +310,5 @@ en una llamada de 6 argumentos, pero el prólogo tiene `pushq %rbp`), corregido 
   literales reales solo se validan contra el rango de `double`; los caracteres no ASCII se informan byte por byte; los comentarios de bloque
   no se anidan; el ejemplo de la spec trae una llave `}` de más y su `main` `void` devuelve valores (rechazado por la regla 6); un solo
   error sintáctico por corrida; el análisis semántico solo corre si no hay errores léxicos ni sintácticos; la búsqueda en la tabla de
-  símbolos es lineal; el intérprete no tiene límite de instrucciones y busca los métodos por nombre en cada llamada.
+  símbolos es lineal.
 

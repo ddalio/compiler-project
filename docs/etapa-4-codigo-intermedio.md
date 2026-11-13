@@ -60,20 +60,17 @@ Instrucciones y su texto en el archivo `.ci`:
 |---|------|----------|
 | 12 | Números reales **(interpretación)** | La cátedra pide código de tres direcciones para las operaciones con tipos **enteros y lógicos** y para el control de flujo, y la etapa siguiente entrega primero los enteros. Por eso el código intermedio **no soporta `float`**: un programa que declare una variable, parámetro o método `float`, o use un literal real, **pasa el análisis semántico pero se rechaza al generar código** con `archivo:línea:columna: codegen error: type 'float' is not supported by the code generator` (un error por cada aparición, en orden del fuente) y no se genera `.ci`. Con `-target sem` esos programas siguen siendo válidos. |
 | 13 | Variables globales | Se declaran con `global @x` al principio del archivo, en orden de declaración. Como la gramática no tiene inicializadores, valen **0** (o falso) al empezar el programa. |
-| 14 | Variables locales | Se declaran todas con `local x` al principio de su método, en orden de declaración (incluidas las de bloques anidados, con nombres únicos según la decisión 6). Los parámetros se declaran en el encabezado del método. El valor inicial de una local no está definido por la spec; **el intérprete las inicializa en 0** para que la ejecución sea determinista. |
+| 14 | Variables locales | Se declaran todas con `local x` al principio de su método, en orden de declaración (incluidas las de bloques anidados, con nombres únicos según la decisión 6). Los parámetros se declaran en el encabezado del método. El valor inicial de una local no está definido por la spec; **se inicializan en 0** (en el prólogo de cada método, ver la etapa 5) para que la ejecución sea determinista. |
 | 15 | Punto de entrada | La ejecución empieza en el método llamado `main` (regla 3 de la spec) y termina cuando éste retorna. |
 | 16 | Formato del `.ci` | Un archivo de texto: primero las líneas `global`, y después cada método como `func nombre(p1, p2)`, sus líneas `local`, las instrucciones con 2 espacios de sangría (las etiquetas sin sangría) y `end`. Una línea en blanco separa las secciones. Abajo se muestra un ejemplo completo. |
 | 17 | Target | **`-target codinter`** pasa a ser el **target por defecto** (la etapa actual). Corre antes el análisis semántico, y el código solo se genera si no hubo ningún error. La extensión de salida es `.ci` (la define la cátedra). `scan`, `parse` y `sem` siguen funcionando igual; `assembly` sigue sin estar disponible. Con `-debug` el código sale también por `stdout`. | _(Actualización etapa 5: sin `-target` el compilador genera hoy el ejecutable; `-target codinter` sigue generando el `.ci` igual.)_
 
-### Intérprete y programas con entrada y salida
+### Entrada y salida
 
 | # | Tema | Decisión |
 |---|------|----------|
-| 18 | Intérprete **(extensión)** | La calificación de la cátedra incluye un intérprete y la teoría habla de **interpretación iterativa sobre código intermedio**: se implementa un intérprete del código de tres direcciones, que además permite verificar los programas ejecutándolos. La cátedra no define cómo se lo invoca; se agrega la opción **`-run`**, válida solo con `-target codinter`: después de generar el código, lo ejecuta desde `main`. Conviene confirmarlo con la cátedra. | _(Actualización etapa 5: `-run` ahora implica `-target codinter`, así que se puede escribir `c-tds -run programa.ctds`; sigue sin poder combinarse con otro target.)_
-| 19 | Entrada y salida | La gramática de C-TDS **no tiene sentencias de entrada ni de salida**. El tutorial de assembly de la cátedra muestra un programa con `extern int get_int();` y `extern void printInt(int x);`, pero las declaraciones `extern` no están en la gramática de la spec y este compilador no las acepta (el analizador sintáctico las rechaza). Por eso el único resultado observable de un programa es el **valor que devuelve `main`**: con `-run`, si `main` devuelve un valor (por ejemplo, `int main()`), se imprime en una línea por `stdout`; si `main` es `void` no se imprime nada. Si más adelante la cátedra confirmara las funciones externas, habría que agregarlas a la gramática y al intérprete. |
-| 20 | Errores de ejecución | Si un programa divide o calcula el resto por cero, el intérprete informa `runtime error: division by zero` por `stderr` y termina con código de salida 1. Es el único error posible en tiempo de ejecución de un programa que pasó el análisis semántico (no hay punteros, arreglos ni entrada de datos). |
-| 21 | Enteros del intérprete | Los enteros son de **32 bits con signo** (lo dice la spec) y las operaciones **dan la vuelta** al desbordar, como en la máquina: `2147483647 + 1` vale `-2147483648`. Se hace con aritmética sin signo para no caer en el comportamiento indefinido de C. `INT_MIN / -1` vale `INT_MIN` y `INT_MIN % -1` vale 0. |
-| 22 | Recursión del intérprete | El intérprete es iterativo y lleva su propia pila de llamadas, no usa la de C. La profundidad máxima es de **100000** llamadas anidadas; superarla (por ejemplo, una recursión infinita) es el error de ejecución `runtime error: call stack overflow`, con código de salida 1. Una recursión legítima de decenas de miles de niveles funciona. |
+| 18 | Entrada y salida | La gramática de C-TDS **no tiene sentencias de entrada ni de salida**. El tutorial de assembly de la cátedra muestra un programa con `extern int get_int();` y `extern void printInt(int x);`, pero las declaraciones `extern` no están en la gramática de la spec y este compilador no las acepta (el analizador sintáctico las rechaza). Por eso el único resultado observable de un programa es el **valor que devuelve `main`** (en el ejecutable, su código de salida). Si más adelante la cátedra confirmara las funciones externas, habría que agregarlas a la gramática y al generador de código. |
+| 19 | Enteros | Los enteros son de **32 bits con signo** (lo dice la spec) y las operaciones **dan la vuelta** al desbordar, como en la máquina: `2147483647 + 1` vale `-2147483648`. El optimizador lo calcula con aritmética sin signo para no caer en el comportamiento indefinido de C. `INT_MIN / -1` vale `INT_MIN` y `INT_MIN % -1` vale 0. |
 
 Ejemplo completo del formato (decisiones 6 a 16). El programa:
 
@@ -159,8 +156,7 @@ cantidad de temporales que usa.
   `nlocals` y `ntemps`.
 - **Los arreglos dinámicos** (globales, parámetros, locales, instrucciones) empiezan con capacidad 8 y la duplican, de
   modo que agregar es de costo amortizado constante.
-- **`IrFunc.returns_value`** guarda si el método devuelve un valor: lo necesita el intérprete para saber si una llamada
-  deja un resultado y la etapa siguiente para saber qué devolver.
+- **`IrFunc.returns_value`** guarda si el método devuelve un valor: la etapa siguiente lo necesita para saber qué devolver.
 
 ### Verificación
 
@@ -249,40 +245,6 @@ AddressSanitizer y UBSan sobre todos los programas de prueba de las etapas 1 a 3
 lo que confirma que la tabla de símbolos se libera después de usar el AST. Los tests permanentes se agregan en la sección
 de testing.
 
-### Intérprete (`interp.h`, `interp.c`) y opción `-run`
-
-Implementa las decisiones 18 a 22. Es una **interpretación iterativa** sobre el código intermedio, la que describe la teoría
-(frente a la interpretación recursiva sobre el AST): mejor verificación de errores y más eficiente.
-
-- **Pila de marcos propia.** En vez de que `exec` se llame a sí misma por cada llamada del programa, el intérprete tiene un
-  bucle y una pila de marcos en el heap. Un `call` apila un marco con los argumentos y un `ret` lo desapila y deja el
-  valor en el resultado del `call` pendiente del marco de abajo. Así la recursión del programa interpretado no desborda la
-  pila de C y el límite es una decisión explícita (decisión 22).
-- **Pila de argumentos.** Los `param` apilan valores y el `call` consume los `n` últimos. Como el generador emite todos los
-  `param` de una llamada seguidos antes del `call` (decisión 10), los argumentos de llamadas anidadas nunca se mezclan.
-- **Cada variable se ubica sin buscarla por nombre.** `IrVar` guarda `is_param` e `index` (se agregaron para esto), y los
-  temporales se numeran desde 1, así que la posición de un operando en el marco es un cálculo directo.
-- **Las etiquetas se resuelven una sola vez** al preparar los métodos (`label_pos`), de modo que un salto es una asignación.
-- **Todo empieza en 0**: los slots de cada marco y las globales (decisiones 13 y 14).
-- **`-run`** es válido solo con `-target codinter`; con otro target el compilador informa `option '-run' requires -target
-  codinter` y termina con código 2. El código se genera y se escribe en el `.ci` como siempre, y después se ejecuta. Si
-  `main` devuelve un valor, se imprime en una línea por `stdout` (un `boolean` sale como 1 o 0). Un error de ejecución sale
-  por `stderr` y el compilador termina con código 1. Con `-debug`, el código intermedio se imprime antes del resultado.
-- **No hay límite de instrucciones**: un programa con un bucle infinito no termina, igual que en cualquier otro intérprete.
-
-### Verificación del intérprete
-
-Se ejecutaron 21 programas con `-run` y se compararon con el resultado calculado a mano: factorial de 10 (3628800), Fibonacci
-de 20 (6765), suma 1..100 (5050), máximo común divisor, recursión de 50000 niveles (1250025000), `-7 / 2 * 100 + -7 % 2`
-(-301, división y resto truncados hacia cero), `2147483647 + 1` (-2147483648), `INT_MIN / -1` y `INT_MIN % -1`, globales y locales
-inicializadas en 0, un `boolean main`, un `void main` (no imprime nada) y llamadas con argumentos anidados. Dos casos
-verifican la semántica del **cortocircuito** (`false && inc()` y `true || inc()` no llaman a `inc`; las otras dos
-combinaciones sí) y otros dos verifican el **orden de evaluación** de la decisión 9 (`g + h()` y `two(g, h())`, donde `h`
-modifica `g`, dan el resultado de leer `g` antes de la llamada). La división y el resto por cero informan `runtime error:
-division by zero` con código 1, y una recursión infinita informa `runtime error: call stack overflow`. Además se comprobó
-que `-run` con otro target, con un error semántico y con un programa con `float` se comporta como corresponde. Sin errores
-de memoria con AddressSanitizer y UBSan. Los tests permanentes se agregan en la sección de testing.
-
 ## 4. Testing
 
 Los casos están en `tests/codinter/` y `tests/unit/` y los ejecuta `tests/run_tests.sh` (`make test`). Los `.expected` están
@@ -292,10 +254,7 @@ nada. No se copió la salida del compilador.
 
 **Tests unitarios (`tests/unit/`).** `test_ir` prueba el TAD del código intermedio: operandos, numeración de temporales (por
 método) y etiquetas (por programa), nombres únicos de variables, crecimiento de los arreglos y el **formato de texto de
-todas las instrucciones**. `test_interp` prueba el intérprete armando los programas directamente con la API, sin el
-generador: cada operación, la aritmética de 32 bits que da la vuelta, la división por cero, los saltos, las globales, el
-paso de argumentos, los marcos independientes en la recursión y el desborde de la pila de llamadas. La explicación de cada
-función está en `guia-del-codigo.md`, sección 17.
+todas las instrucciones**. La explicación de cada función está en `guia-del-codigo.md`, sección 16.
 
 **Código generado (`tests/codinter/valid/`, el `.expected` es el `.ci`):**
 
@@ -320,35 +279,29 @@ función está en `guia-del-codigo.md`, sección 17.
 | `names_like_temporaries` | Variables llamadas `t1` y `L1`: se renombran `t1.2` y `L1.2` para no confundirse con un temporal o una etiqueta. |
 | `factorial_and_loop` | El ejemplo completo de la sección 2 (con `while` y `&&`). |
 
-**Programas ejecutados con `-run` (`tests/codinter/run/`, el `.expected` es el `stdout`):** 26 programas que verifican la
-semántica y no solo la forma del código: factorial de 10, Fibonacci de 20, suma 1..100, máximo común divisor, Collatz de 27
+**Programas completos (`tests/codinter/programs/`, el `.expected` es el valor que devuelve `main`):** 26 programas que se
+compilan a ejecutable y verifican la semántica y no solo la forma del código (el ejecutable sale con ese valor módulo 256): factorial de 10, Fibonacci de 20, suma 1..100, máximo común divisor, Collatz de 27
 (111 pasos), Ackermann(2, 3), cantidad de primos menores que 30, potencias, una recursión de 50000 niveles, bucles
 anidados, el **cortocircuito** (`short_circuit`: `inc()` solo se llama en dos de las cuatro combinaciones), el **orden de
 evaluación** (`eval_order_binary` y `eval_order_args`, donde un método modifica una global), la división y el resto
 truncados hacia cero (`-301`), la **vuelta de 32 bits** (`2147483647 + 1`, `INT_MIN / -1`, `INT_MIN % -1`), inicialización en
-0, variables que ocultan a otras, un `boolean main` y un `void main` (que no imprime nada).
-
-**Errores de ejecución (`tests/codinter/run_errors/`, el `.expected` es el `stderr`):** `division_by_zero`,
-`remainder_by_zero`, `division_by_zero_in_call` y `call_stack_overflow`. Cada uno verifica el mensaje, el código de salida 1 y
-que no se imprima ningún resultado.
+0, variables que ocultan a otras, un `boolean main` y un `void main`.
 
 **Errores de generación (`tests/codinter/errors/`):** un caso por cada lugar donde puede aparecer `float` (variable global,
 parámetro, tipo de retorno, literal), uno con cinco apariciones que verifica el orden y las posiciones, y uno donde un error
 semántico se informa y no se generan los errores de `float` (el análisis semántico corta antes).
 
 **Línea de comandos (en el script):** el target por defecto genera `<fuente>.ci` y no los archivos de las otras etapas; `-o`
-con `-target codinter`; `-run` escribe el `.ci` y ejecuta; `-run` con `-target sem` o `parse` se rechaza con código 2;
-`-run -debug` imprime primero el código y después el resultado; `-run` con un error semántico no genera ni ejecuta; y un
-programa con `float` sigue siendo válido con `-target sem`.
+con `-target codinter`; un error semántico no genera código; y un programa con `float` sigue siendo válido con
+`-target sem`.
 
-**Regresión y memoria:** los 119 casos de las etapas 1 a 3 siguen pasando. En total `make test` ejecuta 183 casos y
-`make test-asan` los mismos con AddressSanitizer y UBSan, sin errores de memoria. Se comprobó además que los tests detectan
-fallas: al cambiar a propósito una etiqueta en un `.expected` de código, un resultado en uno de `-run` y un mensaje en
-uno de error de ejecución, los tres casos fallaron.
+**Regresión y memoria:** los 119 casos de las etapas 1 a 3 siguen pasando, y `make test-asan` corre los mismos con
+AddressSanitizer y UBSan, sin errores de memoria. Se comprobó además que los tests detectan fallas: al cambiar a propósito una
+etiqueta en un `.expected` de código y un resultado en uno de los programas completos, los dos casos fallaron.
 
 **Hallazgos del testing:** ningún `.expected` calculado a mano necesitó correcciones. Al revisar la etapa para cerrarla, un
 programa con variables llamadas `t1` y `L1` mostró un defecto de diseño en la decisión 6: el `.ci` salía como `t1 = 1 + 2`
-seguido de `t1 = t1`, con el temporal y la variable escritos igual (el programa se ejecutaba bien porque los operandos tienen
+seguido de `t1 = t1`, con el temporal y la variable escritos igual (el programa era correcto porque los operandos tienen
 tipo, pero el texto era ambiguo). Se corrigió en `ir.c` (un nombre con forma de temporal o etiqueta se trata como ocupado y la
 variable pasa a llamarse `t1.2` o `L1.2`) y se agregaron un test unitario (`test_names_like_temps_and_labels`) y dos
 programas (`names_like_temporaries` en `valid/` y en `run/`). El caso del `ret` duplicado en un método `void` que termina con `return;`
@@ -357,16 +310,7 @@ programas (`names_like_temporaries` en `valid/` y en `run/`). El caso del `ret` 
 ## 5. Problemas conocidos
 
 - **`float` no está soportado en el código intermedio** (decisión 12). Un programa con números reales pasa el análisis
-  semántico (`-target sem`) pero se rechaza al generar código, y por lo tanto tampoco se puede ejecutar con `-run`.
-- **`-target codinter` como target por defecto y `-run` son extensiones o interpretaciones** de lo que pide la cátedra
-  (decisiones 17 y 18); conviene confirmarlas. El lenguaje no tiene entrada ni salida (el tutorial de assembly usa
-  funciones `extern` que no están en la gramática), así que lo único observable de `-run` es el valor que devuelve `main`;
-  un `boolean` sale como 1 o 0.
-- **El intérprete no tiene límite de instrucciones.** Un programa con un bucle infinito (por ejemplo, `while (true) { }`) no
-  termina; se comprobó que `-run` queda ejecutando hasta que se lo interrumpe.
-- **Profundidad máxima de llamadas.** El intérprete permite 100000 llamadas anidadas (`INTERP_MAX_DEPTH`): una recursión de
-  99998 niveles funciona y una de 100000 informa `runtime error: call stack overflow`, aunque sea finita. Es un límite
-  elegido, no de memoria.
+  semántico (`-target sem`) pero se rechaza al generar código.
 - **Expresiones larguísimas.** El generador es recursivo y usa más pila por nivel que las etapas anteriores: una suma
   `a + a + ... + a` de 20000 términos se compila bien, pero con 30000 el programa se cae por desborde de la pila de C
   (segmentation fault, código 139) en el target `codinter`. En el target `sem` el límite está cerca de los 70000 términos
@@ -378,10 +322,9 @@ programas (`names_like_temporaries` en `valid/` y en `run/`). El caso del `ret` 
   después de un `return` y un método `void` que termina con `return;` tiene dos `ret` seguidos. _(Actualización etapa 6: con
   `-opt` (`docs/etapa-6-optimizador.md`) se pliegan las constantes, se propagan las copias, se elimina el código muerto y se
   compactan los temporales; sin `-opt` el código sigue siendo exactamente el de esta etapa.)_
-- **Las variables locales sin inicializar valen 0.** La spec no define su valor inicial; el intérprete las pone en 0 para que la
-  ejecución sea determinista. _(Actualización etapa 5: el código nativo también las inicializa en 0 en el prólogo de cada método
-  (decisión 9 de la etapa 5), así que el intérprete y los ejecutables se comportan igual; un programa de C equivalente, en
-  cambio, tendría valores indefinidos.)_
+- **Las variables locales sin inicializar valen 0.** La spec no define su valor inicial; se inicializan en 0 para que la
+  ejecución sea determinista. _(Actualización etapa 5: el código nativo las inicializa en 0 en el prólogo de cada método
+  (decisión 9 de la etapa 5); un programa de C equivalente, en cambio, tendría valores indefinidos.)_
 - **Un método puede llamarse como un temporal.** Las variables que se parecen a un temporal o a una etiqueta se renombran,
   pero un método llamado `t1` no puede renombrarse (su nombre es el que verá el ensamblador) y el `.ci` muestra
   `t1 = call t1, 0`. No es ambiguo para el programa, que distingue el operando de `call`, pero es confuso de leer. _(En el assembly
@@ -389,9 +332,6 @@ programas (`names_like_temporaries` en `valid/` y en `run/`). El caso del `ret` 
 - **La protección del orden de evaluación solo cubre variables globales** (decisión 9). Es suficiente porque los parámetros se
   pasan por valor y no hay punteros ni asignaciones dentro de expresiones, pero deja de valer si el lenguaje se amplía con
   alguno de ellos.
-- **El intérprete busca los métodos por nombre en cada llamada** (recorre la lista de métodos con `strcmp`). Con muy
-  pocos métodos no se nota; con cientos de métodos y millones de llamadas sería lento. Resolver el método una vez por
-  instrucción `call` sería la mejora.
 - **Heredados de las etapas anteriores:** `-2147483648` no se puede escribir como literal; los literales reales solo se
   validan contra el rango de `double`; los caracteres no ASCII se informan byte por byte; los comentarios de bloque no se
   anidan; el ejemplo de la spec trae una llave `}` de más y su `main` `void` devuelve valores (rechazado por la regla 6);

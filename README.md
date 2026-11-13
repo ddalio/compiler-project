@@ -2,7 +2,7 @@
 
 Taller de Diseño de Software (Cod. 3306) - DC - FCEFQyN - UNRC - 2026
 
-**Estado:** Etapas 1 (léxico), 2 (sintáctico), 3 (semántico), 4 (código intermedio, con intérprete), 5 (código objeto, assembly x86-64 y ejecutable) y 6 (optimizador del código intermedio) terminadas.
+**Estado:** Etapas 1 (léxico), 2 (sintáctico), 3 (semántico), 4 (código intermedio), 5 (código objeto, assembly x86-64 y ejecutable) y 6 (optimizador del código intermedio) terminadas.
 
 Documentación: [etapa 1](docs/etapa-1-lexico.md), [etapa 2](docs/etapa-2-sintactico.md), [etapa 3](docs/etapa-3-semantico.md), [etapa 4](docs/etapa-4-codigo-intermedio.md), [etapa 5](docs/etapa-5-codigo-objeto.md), [etapa 6](docs/etapa-6-optimizador.md). Para estudiar el código (qué hace cada archivo y cada función): [guía del código](docs/guia-del-codigo.md). Las decisiones que la spec no define y conviene confirmar con la cátedra están reunidas en [decisiones a confirmar](docs/decisiones-a-confirmar.md).
 
@@ -35,7 +35,6 @@ make clean    # borra el ejecutable y la carpeta build/
 | `-target <etapa>` | detiene la compilación en una etapa: `scan`, `parse`, `sem`, `codinter`, `opt` o `assembly`. **Sin `-target` se genera el ejecutable** `<nombre>.out` |
 | `-opt <nombre>` | activa una optimización del código intermedio: `fold`, `propagate`, `dce`, `jumps`, `temps` o `all` (todas). Se puede repetir. **Sin `-opt` no se optimiza nada** |
 | `-debug` | imprime información de depuración |
-| `-run` | ejecuta el código intermedio generado desde `main` y, si `main` devuelve un valor, lo imprime. Implica `-target codinter` y no se puede combinar con otro target |
 
 Salida de cada etapa:
 
@@ -51,7 +50,7 @@ Salida de cada etapa:
 
 Con `-debug` se imprime ese mismo contenido por pantalla (en el ejecutable, el assembly); además, en `parse` la traza del parser sale por `stderr` y en `sem` la traza de la tabla de símbolos.
 
-`-run` ejecuta con enteros de 32 bits (que dan la vuelta al desbordar); una división por cero es un error de ejecución (código de salida 1). El lenguaje no tiene entrada ni salida, así que el único resultado de un programa es el valor que devuelve `main`.
+Los enteros son de 32 bits y dan la vuelta al desbordar. El lenguaje no tiene entrada ni salida, así que el único resultado de un programa es el valor que devuelve `main`.
 
 El ejecutable termina con el código de salida que devuelve `main` (el sistema operativo conserva 8 bits: un resultado de 300 sale como 44) y, si `main` es `void`, con 0. Una división por cero termina el ejecutable con `SIGFPE` (código 136). Para generar el ejecutable hace falta `gcc` (Linux x86-64); con `-target assembly` no.
 
@@ -64,7 +63,6 @@ Ejemplos:
 ./c-tds -o programa programa.ctds      # genera el ejecutable programa
 ./c-tds -target assembly programa.ctds # solo hasta el assembly: genera programa.ass
 ./c-tds -target codinter programa.ctds # solo hasta el código intermedio: genera programa.ci
-./c-tds -run programa.ctds             # interpreta el código intermedio e imprime lo que devuelve main
 ./c-tds -opt all programa.ctds         # compila con todas las optimizaciones: genera programa.out
 ./c-tds -target opt programa.ctds      # código intermedio optimizado: genera programa.opt
 ./c-tds -debug -opt all programa.ctds  # además informa por stderr cuánto mejoró el código
@@ -88,7 +86,7 @@ make test-asan                     # los mismos tests con sanitizers (detecta er
 bash tests/run_tests.sh ./c-tds    # corre los tests con un ejecutable ya compilado
 ```
 
-`make test` ejecuta **415 casos** y todos pasan. Con `bash tests/run_tests.sh ./c-tds` son 408: no corre los 7 programas de tests unitarios, que arma `make test`. Los tests del ejecutable (compilar y correr) necesitan Linux x86-64 y `gcc`; si faltan se omiten con un aviso.
+`make test` ejecuta **316 casos** y todos pasan. Con `bash tests/run_tests.sh ./c-tds` son 310: no corre los 6 programas de tests unitarios, que arma `make test`. Los tests del ejecutable (compilar y correr) necesitan Linux x86-64 y `gcc`; si faltan se omiten con un aviso.
 
 Casos de test (cada `.ctds` tiene un `.expected` con la salida esperada):
 
@@ -102,11 +100,10 @@ Casos de test (cada `.ctds` tiene un `.expected` con la salida esperada):
 | `tests/semantic/errors/` | errores semánticos (uno por regla de la spec, y más) | mensajes de `stderr` |
 | `tests/codinter/valid/` | programas válidos | contenido del `.ci` (código de tres direcciones) |
 | `tests/codinter/errors/` | errores de generación de código (`float`) | mensajes de `stderr` |
-| `tests/codinter/run/` | programas ejecutados con `-run` | `stdout`: el valor que devuelve `main` |
-| `tests/codinter/run_errors/` | errores de ejecución con `-run` | mensajes de `stderr` |
+| `tests/codinter/programs/` | programas completos, compilados a ejecutable (se necesita `gcc`) | el valor que devuelve `main` (el ejecutable sale con ese valor módulo 256) |
 | `tests/assembly/` | assembly de programas completos | contenido del `.ass` |
 | `tests/native/` | programas compilados a ejecutable (se necesita `gcc`) | código de salida del ejecutable |
 | `tests/optimizer/` | programas chicos para ver el efecto del optimizador (`-target opt`) | código optimizado (`.expected`, y `.<optimización>.expected` con una sola optimización) |
-| `tests/unit/` | tests unitarios en C de la tabla de símbolos, los tipos, el AST, el código intermedio, el intérprete, el generador de assembly, el análisis de flujo y el optimizador | (se ejecutan; no tienen `.expected`) |
+| `tests/unit/` | tests unitarios en C de la tabla de símbolos, los tipos, el AST, el código intermedio, el generador de assembly, el análisis de flujo y el optimizador | (se ejecutan; no tienen `.expected`) |
 
-Los tests del scanner usan `-target scan`, los del parser `-target parse`, los semánticos `-target sem` y los de código intermedio `-target codinter` (con `-run` para los programas que se ejecutan) y los de código objeto `-target assembly`. Además, los programas de `tests/codinter/run/` y de `tests/native/` se compilan a ejecutable y se ejecutan; ese grupo necesita Linux x86-64 y `gcc` y, si no están, se omite con un aviso. Los tests de la interfaz de línea de comandos (incluida la opción `-opt`) están en `tests/run_tests.sh`. El optimizador se prueba además con **equivalencia**: los programas de `tests/codinter/run/`, `tests/codinter/run_errors/`, `tests/native/` y `tests/optimizer/` tienen que dar lo mismo sin optimizar y con cada `-opt` (con el intérprete y, si hay `gcc`, con el ejecutable). Los tests unitarios los arma y corre `make test` (el script solo los ejecuta si recibe `UNIT_DIR`).
+Los tests del scanner usan `-target scan`, los del parser `-target parse`, los semánticos `-target sem` y los de código intermedio `-target codinter` y los de código objeto `-target assembly`. Además, los programas de `tests/codinter/programs/` y de `tests/native/` se compilan a ejecutable y se ejecutan; ese grupo necesita Linux x86-64 y `gcc` y, si no están, se omite con un aviso. Los tests de la interfaz de línea de comandos (incluida la opción `-opt`) están en `tests/run_tests.sh`. El optimizador se prueba además con **equivalencia**: los programas de `tests/codinter/programs/`, `tests/native/` y `tests/optimizer/` tienen que dar lo mismo sin optimizar y con cada `-opt` (el ejecutable sale con el mismo código y la misma salida). Los tests unitarios los arma y corre `make test` (el script solo los ejecuta si recibe `UNIT_DIR`).

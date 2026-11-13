@@ -20,24 +20,23 @@ La cátedra define `-o`, `-target` (`scan`, `parse`, `codinter`, `assembly`), `-
 | # | Decisión | Dónde | Qué pasaría si la cátedra prefiere otra cosa |
 |---|----------|-------|----------------------------------------------|
 | 1 | **`-target sem`**: la cátedra define la extensión `.sem` pero su tabla de targets no tiene uno para el análisis semántico. Se agregó. | E3 #7 | Es una opción más: quitarla no afecta a los demás targets (el análisis semántico corre igual antes del código intermedio). |
-| 2 | **`-run`**: ejecuta el código intermedio con el intérprete e imprime lo que devuelve `main`. La cátedra no dice cómo se invoca el intérprete. Implica `-target codinter` y no se combina con otro target. | E4 #18, E5 #4 | Cambiar el nombre de la opción o su forma de invocación es un cambio chico en `main.c`. |
-| 3 | **`-target opt`** escribe el código intermedio optimizado en `<fuente>.opt` (la cátedra reserva la extensión pero no un target). Sin `-opt`, aplica todas las optimizaciones. | E6 #5 | Igual que `-target sem`: aislado en `main.c`. |
-| 4 | **`-opt <nombre>` siempre lleva un argumento** (la cátedra lo escribe entre corchetes). Un argumento opcional sería ambiguo con el nombre del archivo fuente. Se puede repetir. `-opt` con `scan`, `parse` o `sem` es un error de uso. | E6 #3, #4 | Si debe ser opcional, `-opt` sin nombre podría equivaler a `-opt all`, pero habría que fijar una regla para distinguirlo del archivo fuente. |
-| 5 | **Sin `-target` se genera el ejecutable** `<fuente>.out`, como dice la cátedra. El ejecutable se arma con `gcc` (Linux x86-64) y el assembly no se guarda; `-target assembly` lo deja en `<fuente>.ass`. | E5 #2, #3 | Si la cátedra quiere otro ensamblador o enlazador, está aislado en `build_executable` (`main.c`). |
-| 6 | **`-o` no puede apuntar al propio archivo fuente** (con el mismo nombre ni con un enlace): se rechaza con código 2. | E5 #23 | Es una protección; no cambia el comportamiento en el uso normal. |
+| 2 | **`-target opt`** escribe el código intermedio optimizado en `<fuente>.opt` (la cátedra reserva la extensión pero no un target). Sin `-opt`, aplica todas las optimizaciones. | E6 #5 | Igual que `-target sem`: aislado en `main.c`. |
+| 3 | **`-opt <nombre>` siempre lleva un argumento** (la cátedra lo escribe entre corchetes). Un argumento opcional sería ambiguo con el nombre del archivo fuente. Se puede repetir. `-opt` con `scan`, `parse` o `sem` es un error de uso. | E6 #3, #4 | Si debe ser opcional, `-opt` sin nombre podría equivaler a `-opt all`, pero habría que fijar una regla para distinguirlo del archivo fuente. |
+| 4 | **Sin `-target` se genera el ejecutable** `<fuente>.out`, como dice la cátedra. El ejecutable se arma con `gcc` (Linux x86-64) y el assembly no se guarda; `-target assembly` lo deja en `<fuente>.ass`. | E5 #2, #3 | Si la cátedra quiere otro ensamblador o enlazador, está aislado en `build_executable` (`main.c`). |
+| 5 | **`-o` no puede apuntar al propio archivo fuente** (con el mismo nombre ni con un enlace): se rechaza con código 2. | E5 #23 | Es una protección; no cambia el comportamiento en el uso normal. |
 
 ## 2. El lenguaje
 
 | # | Decisión | Dónde |
 |---|----------|-------|
-| 7 | **Coerciones `int`/`float`.** Las reglas 4, 7, 11 y 13 piden "el mismo tipo" y la regla 14 dice que se permiten coerciones o truncamientos; se interpreta que la 14 relaja a las demás (asignación, `return`, argumentos y `==`). `boolean` no es compatible con ellos. | E3 #14 |
-| 8 | **Operador `%`**: sus operandos pueden ser `int` o `float` (regla 10), aunque la prosa de la spec dice que es el resto entre enteros. No se agregó una restricción que la lista de reglas no pide. | E3 #15 |
-| 9 | **El programa de ejemplo de la spec** trae una llave `}` de más (se trata como errata) y su `main` es `void` pero devuelve valores, lo que viola la regla 6: el compilador lo informa como error semántico y no se relajó la regla. En los tests se usa como caso inválido y hay una versión corregida. | E2 #14, E3 #22 |
-| 10 | **Las variables locales valen 0 al empezar.** La spec no define su valor inicial; así el intérprete y el código nativo se comportan igual y de forma determinista. | E5 #9 |
-| 11 | **Sin entrada ni salida.** La gramática no las tiene; el tutorial de assembly usa `extern int get_int();` y `extern void printInt(int x);`, pero `extern` no está en la gramática y el compilador lo rechaza. El único resultado observable es el valor que devuelve `main` (con 8 bits en el ejecutable: un 300 sale como 44). | E4 #19 |
-| 12 | **Aritmética de 32 bits que da la vuelta** (`2147483647 + 1` vale `-2147483648`), igual en el intérprete, el código nativo y el optimizador. | E4 #21, E5 #6, E6 #6 |
-| 13 | **División por cero.** El intérprete informa `runtime error: division by zero` y sale con código 1; el ejecutable termina con `SIGFPE` (código 136) porque no se comprueba cada división. Es la única diferencia entre ambos. El optimizador nunca elimina ni pliega una división por cero. | E5 #19, E6 #6 |
-| 14 | **Literales.** Un real es exactamente `digit+ '.' digit+` (`1.` y `.5` no lo son). Los enteros no llevan signo (`-5` son dos tokens), por lo que `-2147483648` no se puede escribir como literal. | E1 #3, #4 |
+| 6 | **Coerciones `int`/`float`.** Las reglas 4, 7, 11 y 13 piden "el mismo tipo" y la regla 14 dice que se permiten coerciones o truncamientos; se interpreta que la 14 relaja a las demás (asignación, `return`, argumentos y `==`). `boolean` no es compatible con ellos. | E3 #14 |
+| 7 | **Operador `%`**: sus operandos pueden ser `int` o `float` (regla 10), aunque la prosa de la spec dice que es el resto entre enteros. No se agregó una restricción que la lista de reglas no pide. | E3 #15 |
+| 8 | **El programa de ejemplo de la spec** trae una llave `}` de más (se trata como errata) y su `main` es `void` pero devuelve valores, lo que viola la regla 6: el compilador lo informa como error semántico y no se relajó la regla. En los tests se usa como caso inválido y hay una versión corregida. | E2 #14, E3 #22 |
+| 9 | **Las variables locales valen 0 al empezar.** La spec no define su valor inicial; así el programa es determinista y no depende de lo que haya en la pila. | E5 #9 |
+| 10 | **Sin entrada ni salida.** La gramática no las tiene; el tutorial de assembly usa `extern int get_int();` y `extern void printInt(int x);`, pero `extern` no está en la gramática y el compilador lo rechaza. El único resultado observable es el valor que devuelve `main` (con 8 bits en el ejecutable: un 300 sale como 44). | E4 #18 |
+| 11 | **Aritmética de 32 bits que da la vuelta** (`2147483647 + 1` vale `-2147483648`), igual en el código nativo y en el optimizador. | E4 #19, E5 #6, E6 #6 |
+| 12 | **División por cero.** No se comprueba cada división: el ejecutable termina con `SIGFPE` (código 136). El optimizador nunca elimina ni pliega una división por cero, para que el programa siga fallando. | E5 #19, E6 #6 |
+| 13 | **Literales.** Un real es exactamente `digit+ '.' digit+` (`1.` y `.5` no lo son). Los enteros no llevan signo (`-5` son dos tokens), por lo que `-2147483648` no se puede escribir como literal. | E1 #3, #4 |
 
 ## 3. Formatos de salida
 

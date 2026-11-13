@@ -13,12 +13,12 @@ realiza todas las soportadas"*. La lista de la sección siguiente se acordó con
 
 | # | Tema | Decisión |
 |---|------|----------|
-| 1 | Qué se optimiza | Se optimiza el **código intermedio** (el de tres direcciones de la etapa 4), no el assembly. Es independiente de la máquina, ya tiene un intérprete que permite comprobar que el programa optimizado hace lo mismo y lo que se mejora se refleja en el assembly sin trabajo extra (menos instrucciones, menos temporales y un marco de pila más chico). |
+| 1 | Qué se optimiza | Se optimiza el **código intermedio** (el de tres direcciones de la etapa 4), no el assembly. Es independiente de la máquina, permite comprobar que el programa optimizado hace lo mismo compilando ambas versiones a ejecutable y comparándolas, y lo que se mejora se refleja en el assembly sin trabajo extra (menos instrucciones, menos temporales y un marco de pila más chico). |
 | 2 | Lista de optimizaciones | Cinco, cada una con un nombre para `-opt`: **`fold`** (plegado de constantes y simplificaciones algebraicas), **`propagate`** (propagación de constantes y de copias), **`dce`** (eliminación de código muerto), **`jumps`** (optimización de saltos y etiquetas) y **`temps`** (compactación de temporales). **`all`** las activa todas. |
 | 3 | La opción `-opt` | **`-opt <nombre>`**: lleva siempre un argumento (la cátedra lo escribe entre corchetes, pero un argumento opcional sería ambiguo con el nombre del archivo fuente). Se puede repetir (`-opt fold -opt dce`) y las optimizaciones se suman. Un nombre desconocido o la falta del argumento es un error de uso (código 2) que lista los nombres válidos. **Sin `-opt` no se optimiza nada**: todos los targets producen exactamente la misma salida que antes. |
-| 4 | Con qué targets vale | `-opt` optimiza el código intermedio, por lo que vale con `codinter`, `opt`, `assembly`, con el ejecutable (sin `-target`) y con `-run`: el código se optimiza **antes** de escribir el `.ci`, generar el assembly o interpretarlo. Con `scan`, `parse` o `sem` es un error de uso (no hay código intermedio que optimizar). |
+| 4 | Con qué targets vale | `-opt` optimiza el código intermedio, por lo que vale con `codinter`, `opt`, `assembly`, y con el ejecutable (sin `-target`): el código se optimiza **antes** de escribir el `.ci` o de generar el assembly. Con `scan`, `parse` o `sem` es un error de uso (no hay código intermedio que optimizar). |
 | 5 | El archivo `.opt` **(extensión)** | La cátedra reserva la extensión `.opt` para la salida de esta etapa pero no tiene un target para ella. Se agrega **`-target opt`**, que escribe en `<fuente>.opt` el código intermedio optimizado, en el mismo formato que el `.ci`. Sin `-opt`, `-target opt` aplica **todas** las optimizaciones; si se eligen algunas con `-opt`, solo esas. Conviene confirmarlo con la cátedra. |
-| 6 | Reglas de seguridad | El programa optimizado tiene que hacer lo mismo que el original: (a) la aritmética es de **32 bits con signo y da la vuelta**, igual que el intérprete y el código nativo; (b) una **división o un resto por cero nunca se pliega ni se elimina**, aunque su resultado no se use (el programa debe seguir fallando); `INT_MIN / -1` sí se pliega, con el resultado que da la vuelta; (c) **las llamadas nunca se eliminan ni se mueven** (pueden tener efectos) y solo se les puede quitar el resultado si nadie lo usa; (d) una llamada invalida todo lo que se sabe de las **variables globales**; (e) lo que se sabe de las variables se descarta en cada **bloque básico** nuevo, así el cortocircuito y los bucles nunca se rompen; (f) las escrituras a variables globales nunca se eliminan (son observables); (g) los valores iniciales en 0 de las locales no cambian. |
+| 6 | Reglas de seguridad | El programa optimizado tiene que hacer lo mismo que el original: (a) la aritmética es de **32 bits con signo y da la vuelta**, igual que el código nativo; (b) una **división o un resto por cero nunca se pliega ni se elimina**, aunque su resultado no se use (el programa debe seguir fallando); `INT_MIN / -1` sí se pliega, con el resultado que da la vuelta; (c) **las llamadas nunca se eliminan ni se mueven** (pueden tener efectos) y solo se les puede quitar el resultado si nadie lo usa; (d) una llamada invalida todo lo que se sabe de las **variables globales**; (e) lo que se sabe de las variables se descarta en cada **bloque básico** nuevo, así el cortocircuito y los bucles nunca se rompen; (f) las escrituras a variables globales nunca se eliminan (son observables); (g) los valores iniciales en 0 de las locales no cambian. |
 | 7 | Orden y punto fijo | Para cada método se aplican, en este orden, `fold`, `propagate`, `jumps` y `dce`, y se **repite hasta que ninguna cambie nada** (con un tope de seguridad de 50 vueltas más una por cada instrucción del método). Cada una abre posibilidades a las otras: al propagar una constante, `fold` puede calcular la operación; al plegar una condición, `jumps` resuelve el salto; al resolver el salto, `dce` elimina el código inalcanzable. Después, una sola vez, `temps` renumera los temporales. Cuando `fold` está activada, `propagate` además **pliega en el momento** cada operación que se vuelve constante al reemplazar un operando; así una cadena de constantes (`1+2+3+...`) se resuelve en una pasada y no en una vuelta por cada eslabón (ver el hallazgo de la sección 5). |
 | 8 | Alcance de la propagación | La propagación es **local a cada bloque básico**. Es más simple y segura que un análisis de todo el método y alcanza para el código que genera el compilador, porque cada expresión se calcula y se usa dentro del mismo bloque. |
 | 9 | Estadísticas | Con `-debug`, el optimizador informa por `stderr` una línea por método (`[opt] f: 22 -> 2 instructions, 8 -> 0 temporaries`) y un total con las operaciones plegadas, los operandos reemplazados, las instrucciones eliminadas, los saltos y etiquetas resueltos y la cantidad de vueltas. Sin `-debug` no se imprime nada. |
@@ -130,21 +130,17 @@ El programa devuelve 14 igual que antes. Las declaraciones de `x` y `y` se conse
   `Options.opt_mask`. Si el nombre no existe o falta, se informa con `opt_names()` la lista de nombres válidos. Si hay `-opt` con
   `scan`, `parse` o `sem` es un error de uso.
 - **Dónde se optimiza.** `build_ir` (el que genera el código intermedio y lo usan `codinter`, `opt`, `assembly` y el ejecutable) llama a
-  `opt_run` justo después de `irgen_generate`. Así **todas** las salidas (el `.ci`, el assembly, el ejecutable y `-run`) reflejan las
+  `opt_run` justo después de `irgen_generate`. Así **todas** las salidas (el `.ci`, el assembly y el ejecutable) reflejan las
   optimizaciones pedidas, y sin `-opt` el camino no cambia.
 - **`-target opt`** reutiliza `run_codinter` pasándole la extensión `.opt`. Si el usuario no eligió optimizaciones, `parse_args` activa todas.
 - **`-debug`** pasa `stderr` a `opt_run` y se imprime el total, de modo que el código (por `stdout`) y las estadísticas no se mezclan.
 
 ### Verificación
 
-Se verificó que **optimizar no cambia el comportamiento**, con dos pruebas sobre todos los programas de prueba del proyecto:
-
-- **Con el intérprete:** cada programa de `tests/codinter/run/`, `run_errors/`, `native/`, `codinter/valid/` y `semantic/valid/` se ejecutó con `-run`
-  sin optimizar y con cada una de las optimizaciones por separado, con algunas combinaciones y con `all` (9 configuraciones): la salida y el código de
-  salida fueron idénticos en las **747 ejecuciones**. Esto incluye los programas con división por cero, recursión infinita y desborde de 32 bits, que
-  siguen fallando de la misma manera.
-- **Con código nativo:** los 52 programas de `tests/codinter/run/` y `tests/native/` se compilaron a ejecutable con cada optimización y se
-  compararon sus códigos de salida con el del ejecutable sin optimizar: idénticos en las **312 compilaciones**.
+Se verificó que **optimizar no cambia el comportamiento** compilando a ejecutable cada programa de prueba del proyecto (los 52 de
+`tests/codinter/programs/` y `tests/native/`) con cada optimización y comparando su código de salida con el del ejecutable sin optimizar:
+idénticos en las **312 compilaciones**. Esto incluye los programas con división por cero y desborde de 32 bits, que siguen fallando y
+dando la vuelta de la misma manera.
 
 Efecto medido sobre esos 52 programas: de **603 a 420 instrucciones** de código intermedio con `-opt all` (un 30% menos; eran 429 antes de que `propagate`
 pliegue en el momento, ver el hallazgo de la sección 5); en el programa de ejemplo de la sección 3, el assembly pasa de 83 a 21 líneas. Sin errores de memoria
@@ -155,7 +151,7 @@ con AddressSanitizer y UBSan. Los tests permanentes del optimizador están en la
 Hay dos clases de tests del optimizador, y las dos comparan con resultados **escritos a mano antes de correr nada**, no copiados de la salida del compilador:
 
 1. **Tests unitarios** (`tests/unit/test_flow.c` y `test_opt.c`): prueban el análisis y cada optimización directamente sobre código intermedio armado con la API (la explicación
-   de cada función de prueba está en `guia-del-codigo.md`, sección 22).
+   de cada función de prueba está en `guia-del-codigo.md`, sección 21).
 2. **Tests de programas completos** (`tests/optimizer/` y los grupos del optimizador de `tests/run_tests.sh`): pasan un programa C-TDS por todo el compilador, y comprueban el
    código optimizado esperado, que el programa optimizado hace lo mismo que el original y la opción `-opt` de la línea de comandos.
 
@@ -204,17 +200,16 @@ una sin que las otras la tapen. El script corre `-target opt` (o `-opt <nombre> 
 | `constant_chain` | Una suma de 60 constantes (`1+2+...+60`) se pliega entera a `ret 1830` (= 60·61/2): el caso que mostró el defecto del tope de vueltas. |
 | `fully_constant` | Un programa donde todo es constante: se reduce a `@g = 14` y `ret 14`. |
 
-**Equivalencia (la prueba de que no cambia el comportamiento).** Los programas de `tests/codinter/run/`, `run_errors/`, `native/` y `optimizer/` se ejecutan con `-run` sin
-optimizar y con `-opt all` y con cada una de las cinco optimizaciones sola (6 variantes por programa): el `stdout`, el mensaje de error de ejecución y el código de salida tienen que
-ser **idénticos** (65 programas). Con gcc disponible, los programas de `tests/codinter/run/`, `tests/native/` y `tests/optimizer/` se compilan también a ejecutable, sin optimizar y con
-`-opt all` (en `optimizer/` también con cada una por separado), y se comparan el código de salida y la salida (61 programas). Esto incluye los que **fallan a propósito**: una división
-o un resto por cero tiene que seguir terminando con la misma señal, no desaparecer.
+**Equivalencia (la prueba de que no cambia el comportamiento).** Los programas de `tests/codinter/programs/`, `native/` y `optimizer/` se compilan a ejecutable sin optimizar y con
+`-opt all` y con cada una de las cinco optimizaciones sola (6 variantes por programa), y se comparan el código de salida y la salida del ejecutable: tienen que ser **idénticos**
+(62 programas; necesita Linux x86-64 y `gcc`). Esto incluye los que **fallan a propósito**: una división o un resto por cero tiene que seguir terminando con la misma señal, no
+desaparecer. El valor de cada programa de `codinter/programs/` está además escrito a mano en su `.expected` y se verifica en otro grupo, de modo que el optimizado coincide con ese valor.
 
-**Línea de comandos (27 casos).** `-opt` sin argumento, con un nombre desconocido (y que lista los nombres válidos), con la opción siguiente en lugar de un nombre, y con
+**Línea de comandos (26 casos).** `-opt` sin argumento, con un nombre desconocido (y que lista los nombres válidos), con la opción siguiente en lugar de un nombre, y con
 `-target scan`, `parse` y `sem` (todos código 2); cada nombre válido (`fold`, `propagate`, `dce`, `jumps`, `temps`, `all`) escribe el `.opt` sin imprimir nada;
 `-target opt` sin `-opt` es lo mismo que `-opt all`; repetir un nombre, cambiar el orden y escribir las cinco juntas equivale a `all` (importa el conjunto, no el orden);
 sin `-opt` el `.ci` no se optimiza y `-debug` no menciona `[opt]`; `-opt all -target codinter` escribe el mismo código que el `.opt`; `-debug` da las estadísticas por `stderr` y el
-código por `stdout`; `-run` con `-opt` da el mismo resultado y escribe el `.ci` optimizado; el nombre por defecto es `<fuente>.opt` junto al fuente y `-o` no puede pisar el fuente;
+código por `stdout`; el nombre por defecto es `<fuente>.opt` junto al fuente y `-o` no puede pisar el fuente;
 con `-target assembly` el assembly sale más corto y sin la multiplicación; un error semántico o un `float` se informan igual que sin `-opt` y no generan salida; y el ejecutable
 optimizado sale con el valor esperado.
 
@@ -222,12 +217,12 @@ optimizado sale con el valor esperado.
 
 | Mutación | Tests que fallan |
 |----------|------------------|
-| No invalidar las globales en una llamada | `globals_and_calls` (esperado y equivalencia) y los viejos `eval_order_args`, `eval_order_binary` y `native/evaluation_order` |
+| No invalidar las globales en una llamada | `globals_and_calls` (esperado y equivalencia) y los viejos `codinter/programs/eval_order_args`, `eval_order_binary` y `native/evaluation_order` |
 | Eliminar una división que puede fallar | `division_by_zero_kept` (esperado y equivalencia) |
-| Eliminar la llamada cuyo resultado no se usa | `dead_code` (con `all` y con `dce`) y `short_circuit` (interprete y nativo) |
-| Plegar la división por cero | `division_by_zero_kept`, `run_errors/division_by_zero`, `run_errors/remainder_by_zero`, `native/division_by_zero` y `native/remainder_by_zero` |
+| Eliminar la llamada cuyo resultado no se usa | `dead_code` (con `all` y con `dce`), `codinter/programs/short_circuit` y `native/short_circuit_native` |
+| Plegar la división por cero | `division_by_zero_kept`, `native/division_by_zero` y `native/remainder_by_zero` |
 
-Con el código restaurado (igual a `HEAD`) vuelven a pasar todos. Para el defecto del tope de vueltas (hallazgo 3) se hizo lo mismo: sin el plegado inmediato falla `test_opt`
+Con el código restaurado (igual a `HEAD`) vuelven a pasar todos. Las cuatro mutaciones se detectan usando solo el ejecutable como oráculo. Para el defecto del tope de vueltas (hallazgo 3) se hizo lo mismo: sin el plegado inmediato falla `test_opt`
 (`st.rounds <= 3`), y con el comportamiento viejo completo (sin plegado inmediato y con tope fijo de 50) fallan además `constant_chain` y la cadena de 100 constantes.
 
 **Hallazgos de los tests.** (1) La primera versión de `globals_and_calls` **no detectaba** la mutación "no invalidar globales": en `g = g + h()` la global se lee *antes* de la llamada,
@@ -245,12 +240,11 @@ constantes pasó de 60 vueltas a 2 y una suma de 5000 constantes de 3,6 s a 0,4 
 
 | Carpeta | Programas | Instrucciones | Temporales |
 |---------|-----------|---------------|------------|
-| `tests/codinter/run/` | 26 | 309 → 243 (21% menos) | 115 → 79 |
+| `tests/codinter/programs/` | 26 | 309 → 243 (21% menos) | 115 → 79 |
 | `tests/native/` | 26 | 294 → 177 (39% menos) | 150 → 60 |
 | `tests/optimizer/` | 9 | 147 → 35 (76% menos) | 85 → 7 |
 
-**Resultado.** `make test` ejecuta **415 casos** y todos pasan (los 249 anteriores —etapas 1 a 5 y tests unitarios del optimizador— más 166 de programas completos del optimizador: 13 de código esperado, 65 de
-equivalencia con el intérprete, 61 de equivalencia nativa y 27 de línea de comandos); `make test-asan` también, sin errores de memoria ni de comportamiento indefinido.
+**Resultado.** `make test` ejecuta **316 casos** y todos pasan; los del optimizador son 13 de código esperado, 62 de equivalencia y 26 de línea de comandos, más los programas unitarios `test_flow` y `test_opt`. `make test-asan` también, sin errores de memoria ni de comportamiento indefinido.
 
 ## 6. Problemas conocidos
 
@@ -297,6 +291,6 @@ mismo" se verifica en los tests unitarios con 7 programas armados a mano y no so
 - **Los números reales** no están soportados (decisión 11): un programa con `float` se rechaza en el generador de código intermedio, con y sin `-opt`.
 
 **Heredados de las etapas anteriores** (ver los problemas conocidos de cada una): el lenguaje no tiene entrada ni salida, el único resultado observable de un ejecutable es de 8 bits (por eso los tests
-comparan módulo 256), el ejecutable termina con `SIGFPE` en una división por cero mientras el intérprete informa un error (los tests de equivalencia comparan cada uno contra su propia versión sin
+comparan módulo 256), el ejecutable termina con `SIGFPE` en una división por cero (los tests de equivalencia comparan cada programa contra su propia versión sin
 optimizar), y la recursión muy profunda depende de la pila del sistema.
 
