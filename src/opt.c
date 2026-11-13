@@ -89,6 +89,7 @@ static int compute(IrOp op, long long a, long long b, long long *out)
     case IR_LT:  *out = sa < sb;       return 1;
     case IR_GT:  *out = sa > sb;       return 1;
     case IR_EQ:  *out = sa == sb;      return 1;
+    case IR_NE:  *out = sa != sb;      return 1;
     case IR_DIV:
     case IR_MOD:
         if (sb == 0)
@@ -114,7 +115,7 @@ static int fold_instr(Instr *in)
 
     switch (in->op) {
     case IR_ADD: case IR_SUB: case IR_MUL: case IR_DIV: case IR_MOD:
-    case IR_LT: case IR_GT: case IR_EQ:
+    case IR_LT: case IR_GT: case IR_EQ: case IR_NE:
         if (is_const(in->a) && is_const(in->b) &&
             compute(in->op, in->a.value, in->b.value, &v)) {
             make_move(in, ir_const(v));
@@ -160,7 +161,7 @@ static int fold_instr(Instr *in)
                 make_move(in, ir_const(1)); folded = 1;
             }
             break;
-        case IR_LT: case IR_GT:
+        case IR_NE: case IR_LT: case IR_GT:
             if (same_location(in->a, in->b)) {
                 make_move(in, ir_const(0)); folded = 1;
             }
@@ -373,7 +374,7 @@ static int removable_if_unused(const Instr *in)
 {
     switch (in->op) {
     case IR_MOVE: case IR_ADD: case IR_SUB: case IR_MUL:
-    case IR_NEG: case IR_NOT: case IR_LT: case IR_GT: case IR_EQ:
+    case IR_NEG: case IR_NOT: case IR_LT: case IR_GT: case IR_EQ: case IR_NE:
         return 1;
     case IR_DIV:
     case IR_MOD:
