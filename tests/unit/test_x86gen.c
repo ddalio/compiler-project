@@ -316,11 +316,13 @@ static void test_unary(void)
 static void fill_compare(IrProgram *p, IrFunc *f)
 {
     Operand t1 = ir_new_temp(f), t2 = ir_new_temp(f), t3 = ir_new_temp(f);
+    Operand t4 = ir_new_temp(f);
 
     (void)p;
     ir_emit(f, IR_LT, ir_var(f->params[0]), ir_var(f->params[1]), t1);
     ir_emit(f, IR_GT, ir_var(f->params[0]), ir_const(4), t2);
     ir_emit(f, IR_EQ, t1, ir_var(p->globals[0]), t3);
+    ir_emit(f, IR_NE, ir_var(f->params[0]), ir_const(7), t4);
 }
 
 static void test_comparisons(void)
@@ -333,6 +335,8 @@ static void test_comparisons(void)
                  I("setg    %r11b") I("movzbl  %r11b, %r11d") I("movl    %r11d, -32(%rbp)")));
     CHECK(has(a, I("# t3 = t1 == @g") I("movl    -24(%rbp), %r10d") I("cmpl    ctds_g(%rip), %r10d")
                  I("sete    %r11b") I("movzbl  %r11b, %r11d") I("movl    %r11d, -40(%rbp)")));
+    CHECK(has(a, I("# t4 = p0 != 7") I("movl    -8(%rbp), %r10d") I("cmpl    $7, %r10d")
+                 I("setne   %r11b") I("movzbl  %r11b, %r11d") I("movl    %r11d, -48(%rbp)")));
     free(a);
 }
 

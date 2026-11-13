@@ -1,0 +1,2 @@
+not_equal_types.ctds:1:32: semantic error: operands of '!=' must have the same type, got int and boolean
+not_equal_types.ctds:1:50: semantic error: operands of '!=' must have the same type, got boolean and int

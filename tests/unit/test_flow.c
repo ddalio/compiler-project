@@ -46,7 +46,7 @@ static Instr make(IrOp op)
 static void test_binary_instructions(void)
 {
     static const IrOp ops[] = { IR_ADD, IR_SUB, IR_MUL, IR_DIV, IR_MOD, IR_LT,
-                                IR_GT, IR_EQ };
+                                IR_GT, IR_EQ, IR_NE };
 
     for (size_t k = 0; k < sizeof ops / sizeof ops[0]; k++) {
         Instr in = make(ops[k]);

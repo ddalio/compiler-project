@@ -1,0 +1,6 @@
+func main()
+  local x
+  local y
+  local r
+  ret 1
+end

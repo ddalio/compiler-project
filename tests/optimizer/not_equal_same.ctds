@@ -1,0 +1,2 @@
+boolean f(int a) { return a != a; }
+boolean main() { return f(3); }

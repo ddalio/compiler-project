@@ -1,0 +1,15 @@
+func main()
+  local x
+  local ok
+  x = 5
+  t1 = x != 5
+  ok = t1
+  t2 = x != 7
+  t3 = ! t2
+  t4 = t3
+  jz t4, L1
+  t4 = ok
+L1:
+  ok = t4
+  ret
+end

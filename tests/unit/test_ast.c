@@ -163,7 +163,7 @@ static void test_all_operators(void)
         { "a + b", OP_ADD }, { "a - b", OP_SUB }, { "a * b", OP_MUL },
         { "a / b", OP_DIV }, { "a % b", OP_MOD }, { "a < b", OP_LT },
         { "a > b", OP_GT },  { "a == b", OP_EQ }, { "a && b", OP_AND },
-        { "a || b", OP_OR },
+        { "a || b", OP_OR }, { "a != b", OP_NE },
     };
     char src[64];
 

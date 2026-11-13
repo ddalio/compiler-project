@@ -1,0 +1,80 @@
+program
+  method_decl
+    KW_VOID void
+    ID f
+    params
+    block
+      assign
+        ID x
+        binary_expr
+          ID a
+          NE !=
+          ID b
+      assign
+        ID x
+        binary_expr
+          binary_expr
+            ID a
+            NE !=
+            ID b
+          EQ ==
+          ID c
+      assign
+        ID x
+        binary_expr
+          binary_expr
+            ID a
+            EQ ==
+            ID b
+          NE !=
+          ID c
+      assign
+        ID x
+        binary_expr
+          binary_expr
+            INT_LITERAL 1
+            PLUS +
+            INT_LITERAL 2
+          NE !=
+          INT_LITERAL 3
+      assign
+        ID x
+        binary_expr
+          binary_expr
+            ID a
+            LT <
+            ID b
+          NE !=
+          binary_expr
+            ID c
+            GT >
+            ID d
+      assign
+        ID x
+        binary_expr
+          binary_expr
+            ID a
+            NE !=
+            ID b
+          AND &&
+          binary_expr
+            ID c
+            NE !=
+            ID d
+      assign
+        ID x
+        unary_expr
+          NOT !
+          binary_expr
+            ID a
+            NE !=
+            ID b
+      assign
+        ID x
+        binary_expr
+          ID a
+          NE !=
+          binary_expr
+            ID b
+            EQ ==
+            ID c

@@ -1,0 +1,8 @@
+void main() {
+  int i;
+  float x;
+  boolean r;
+  r = i != 4;
+  r = x != i;
+  r = r != true;
+}

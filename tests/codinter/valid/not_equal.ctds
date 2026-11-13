@@ -1,0 +1,7 @@
+void main() {
+  int x;
+  boolean ok;
+  x = 5;
+  ok = x != 5;
+  ok = !(x != 7) && ok;
+}

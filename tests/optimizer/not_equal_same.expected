@@ -1,0 +1,9 @@
+func f(a)
+  ret 0
+end
+
+func main()
+  param 3
+  t1 = call f, 1
+  ret t1
+end

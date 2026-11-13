@@ -140,6 +140,8 @@ static void build_fold_constants(IrProgram *p, IrFunc *f)
     emit(f, IR_NEG, ir_const(6), NONE, T(f, 8));
     emit(f, IR_NOT, ir_const(0), NONE, T(f, 9));
     emit(f, IR_NOT, ir_const(5), NONE, T(f, 10));
+    emit(f, IR_NE, ir_const(3), ir_const(4), T(f, 11));
+    emit(f, IR_NE, ir_const(5), ir_const(5), T(f, 12));
 }
 
 static void test_fold_constants(void)
@@ -149,9 +151,10 @@ static void test_fold_constants(void)
 
     CHECK_TEXT(got,
         HDR IN("t1 = 12") IN("t2 = 6") IN("t3 = 3") IN("t4 = 1") IN("t5 = 1")
-            IN("t6 = 0") IN("t7 = 1") IN("t8 = -6") IN("t9 = 1") IN("t10 = 0") END);
-    CHECK(st.folded == 10);                         /* una por cada operacion */
-    CHECK(st.before == 10 && st.after == 10);       /* fold no cambia la cantidad */
+            IN("t6 = 0") IN("t7 = 1") IN("t8 = -6") IN("t9 = 1") IN("t10 = 0")
+            IN("t11 = 1") IN("t12 = 0") END);
+    CHECK(st.folded == 12);                         /* una por cada operacion */
+    CHECK(st.before == 12 && st.after == 12);       /* fold no cambia la cantidad */
     free(got);
 }
 
@@ -216,6 +219,7 @@ static void build_fold_algebra(IrProgram *p, IrFunc *f)
     emit(f, IR_EQ, A(f), A(f), T(f, 11));
     emit(f, IR_LT, A(f), A(f), T(f, 12));
     emit(f, IR_GT, A(f), A(f), T(f, 13));
+    emit(f, IR_NE, A(f), A(f), T(f, 14));
 }
 
 static void test_fold_algebra(void)
@@ -226,8 +230,8 @@ static void test_fold_algebra(void)
     CHECK_TEXT(got,
         HDR IN("t1 = a") IN("t2 = a") IN("t3 = a") IN("t4 = 0") IN("t5 = a")
             IN("t6 = b") IN("t7 = 0") IN("t8 = 0") IN("t9 = a") IN("t10 = 0")
-            IN("t11 = 1") IN("t12 = 0") IN("t13 = 0") END);
-    CHECK(st.folded == 13);
+            IN("t11 = 1") IN("t12 = 0") IN("t13 = 0") IN("t14 = 0") END);
+    CHECK(st.folded == 14);
     free(got);
 }
 

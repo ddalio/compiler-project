@@ -1,0 +1,21 @@
+program
+  method_decl main : void
+    block
+      var_decl i : int
+      var_decl x : float
+      var_decl r : boolean
+      assign
+        id r : boolean [variable]
+        binary_expr != : boolean
+          id i : int [variable]
+          int_literal 4 : int
+      assign
+        id r : boolean [variable]
+        binary_expr != : boolean
+          id x : float [variable]
+          id i : int [variable]
+      assign
+        id r : boolean [variable]
+        binary_expr != : boolean
+          id r : boolean [variable]
+          bool_literal true : boolean
