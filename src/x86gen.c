@@ -284,6 +284,7 @@ static void gen_instr(Gen *g, const Instr *in)
     case IR_LT: gen_compare(g, in, "setl"); break;
     case IR_GT: gen_compare(g, in, "setg"); break;
     case IR_EQ: gen_compare(g, in, "sete"); break;
+    case IR_NE: gen_compare(g, in, "setne"); break;
     case IR_JMP:
         put(g, NULL, "jmp", ".L%lld", in->a.value);
         break;
