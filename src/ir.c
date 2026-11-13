@@ -300,6 +300,7 @@ static const char *operator_text(IrOp op)
     case IR_LT:  return "<";
     case IR_GT:  return ">";
     case IR_EQ:  return "==";
+    case IR_NE:  return "!=";
     case IR_NOT: return "!";
     default:     return NULL;
     }
@@ -318,7 +319,7 @@ void ir_print_instr(FILE *out, const Instr *in)
         print_operand(out, in->a);
         break;
     case IR_ADD: case IR_SUB: case IR_MUL: case IR_DIV: case IR_MOD:
-    case IR_LT: case IR_GT: case IR_EQ:
+    case IR_LT: case IR_GT: case IR_EQ: case IR_NE:
         print_operand(out, in->result);
         fputs(" = ", out);
         print_operand(out, in->a);

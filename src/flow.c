@@ -22,7 +22,7 @@ int instr_reads(Instr *in, Operand *out[2])
         out[0] = &in->a;
         return 1;
     case IR_ADD: case IR_SUB: case IR_MUL: case IR_DIV: case IR_MOD:
-    case IR_LT: case IR_GT: case IR_EQ:
+    case IR_LT: case IR_GT: case IR_EQ: case IR_NE:
         out[0] = &in->a;
         out[1] = &in->b;
         return 2;
@@ -40,7 +40,7 @@ Operand *instr_write(Instr *in)
     case IR_MOVE:
     case IR_ADD: case IR_SUB: case IR_MUL: case IR_DIV: case IR_MOD:
     case IR_NEG: case IR_NOT:
-    case IR_LT: case IR_GT: case IR_EQ:
+    case IR_LT: case IR_GT: case IR_EQ: case IR_NE:
         return &in->result;
     case IR_CALL:
         return in->result.kind == OPD_NONE ? NULL : &in->result;

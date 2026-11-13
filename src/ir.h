@@ -17,7 +17,7 @@
  *
  *   IR_MOVE                        result = a
  *   IR_ADD IR_SUB IR_MUL IR_DIV IR_MOD
- *   IR_LT IR_GT IR_EQ              result = a (op) b
+ *   IR_LT IR_GT IR_EQ IR_NE        result = a (op) b
  *   IR_NEG IR_NOT                  result = (op) a
  *   IR_LABEL                       a = etiqueta que se define
  *   IR_JMP                         a = etiqueta destino
@@ -75,7 +75,7 @@ typedef enum {
     IR_MOVE,
     IR_ADD, IR_SUB, IR_MUL, IR_DIV, IR_MOD,
     IR_NEG,
-    IR_LT, IR_GT, IR_EQ,
+    IR_LT, IR_GT, IR_EQ, IR_NE,
     IR_NOT,
     IR_LABEL, IR_JMP, IR_JZ, IR_JNZ,
     IR_PARAM, IR_CALL, IR_RET

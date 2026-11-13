@@ -182,6 +182,7 @@ static IrOp binary_op(OpKind op)
     case OP_LT:  return IR_LT;
     case OP_GT:  return IR_GT;
     case OP_EQ:  return IR_EQ;
+    case OP_NE:  return IR_NE;
     default:
         fprintf(stderr, "c-tds: internal error: unexpected binary operator\n");
         exit(2);
