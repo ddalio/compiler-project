@@ -69,7 +69,7 @@ static void advance(const char *text, int len)
 /* Devuelve el token `tok` junto con una hoja del arbol de parsing que guarda
  * su lexema y su posicion. Lo usan los tokens que aportan informacion al
  * arbol (tipos, identificadores, literales y operadores). El que recibe el
- * token es dueno de la hoja y debe liberarla (el parser lo hace; ver
+ * token es dueño de la hoja y debe liberarla (el parser lo hace; ver
  * bison.y). */
 #define LEAF(tok) \
     do { yylval.node = node_at(leaf_new(token_name(tok), yytext), \

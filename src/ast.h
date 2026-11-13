@@ -80,7 +80,7 @@ typedef struct Ast {
         int b;              /*   AST_BOOL_LIT (0 o 1) */
     } value;
     struct Symbol *sym;     /* simbolo al que se refiere (lo completa el
-                             * analisis semantico); el AST no es su dueno */
+                             * analisis semantico); el AST no es su dueño */
     struct Ast *left, *mid, *right;
     struct Ast *next;       /* siguiente elemento si el nodo esta en una lista */
 } Ast;
