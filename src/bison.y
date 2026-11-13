@@ -103,7 +103,7 @@
  * forma unaria usa UMINUS (%prec). */
 %left  TOK_OR
 %left  TOK_AND
-%left  TOK_EQ
+%left  TOK_EQ TOK_NE
 %left  TOK_LT TOK_GT
 %left  TOK_PLUS TOK_MINUS
 %left  TOK_STAR TOK_SLASH TOK_PERCENT
@@ -277,6 +277,7 @@ expr
     | expr TOK_LT expr              { $$ = AT(node3("binary_expr", $1, $2, $3), @$); }
     | expr TOK_GT expr              { $$ = AT(node3("binary_expr", $1, $2, $3), @$); }
     | expr TOK_EQ expr              { $$ = AT(node3("binary_expr", $1, $2, $3), @$); }
+    | expr TOK_NE expr              { $$ = AT(node3("binary_expr", $1, $2, $3), @$); }
     | expr TOK_AND expr             { $$ = AT(node3("binary_expr", $1, $2, $3), @$); }
     | expr TOK_OR expr              { $$ = AT(node3("binary_expr", $1, $2, $3), @$); }
     | TOK_MINUS expr %prec UMINUS   { $$ = AT(node2("unary_expr", $1, $2), @$); }
