@@ -165,6 +165,7 @@ ID      {ALPHA}({ALPHA}|{DIGIT}|_)*
 "<"                     { LEAF(TOK_LT); }
 ">"                     { LEAF(TOK_GT); }
 "=="                    { LEAF(TOK_EQ); }
+"!="                    { LEAF(TOK_NE); }
 "&&"                    { LEAF(TOK_AND); }
 "||"                    { LEAF(TOK_OR); }
 "!"                     { LEAF(TOK_NOT); }

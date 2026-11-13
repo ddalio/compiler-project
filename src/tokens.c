@@ -32,6 +32,7 @@ const char *token_name(int token)
     case TOK_LT:            return "LT";
     case TOK_GT:            return "GT";
     case TOK_EQ:            return "EQ";
+    case TOK_NE:            return "NE";
     case TOK_AND:           return "AND";
     case TOK_OR:            return "OR";
     case TOK_NOT:           return "NOT";

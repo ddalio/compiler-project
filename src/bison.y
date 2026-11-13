@@ -85,6 +85,7 @@
 %token <node> TOK_LT        "<"
 %token <node> TOK_GT        ">"
 %token <node> TOK_EQ        "=="
+%token <node> TOK_NE        "!="
 %token <node> TOK_AND       "&&"
 %token <node> TOK_OR        "||"
 %token <node> TOK_NOT       "!"
